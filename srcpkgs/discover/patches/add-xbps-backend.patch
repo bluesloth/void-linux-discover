@@ -1,0 +1,819 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 0000000..1111111 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -70,6 +70,8 @@ set(CMAKE_AUTORCC ON)
+ set(DISCOVER_VERSION ${PROJECT_VERSION})
+ set(DISCOVER_PLUGIN_IID ${PROJECT_VERSION})
+ string(PREPEND DISCOVER_PLUGIN_IID "org.kde.discover.")
+ string(APPEND DISCOVER_PLUGIN_IID ".AbstractResourcesBackendFactory")
++
++option(BUILD_XbpsBackend "Build xbps support." "OFF")
+ 
+ set(DISCOVER_SONAME "DiscoverCommon")
+ if(DISCOVER_RELEASE_BUILD)
+diff --git a/libdiscover/backends/CMakeLists.txt b/libdiscover/backends/CMakeLists.txt
+index 0000000..1111111 100644
+--- a/libdiscover/backends/CMakeLists.txt
++++ b/libdiscover/backends/CMakeLists.txt
+@@ -96,3 +96,7 @@ set_package_properties(ApkQt PROPERTIES
+ option(BUILD_AlpineApkBackend "Build Alpine APK support." "ON")
+ if(BUILD_AlpineApkBackend AND ApkQt_FOUND)
+     add_subdirectory(AlpineApkBackend)
+ endif()
++
++if(BUILD_XbpsBackend)
++    add_subdirectory(XbpsBackend)
++endif()
+diff --git a/libdiscover/backends/XbpsBackend/CMakeLists.txt b/libdiscover/backends/XbpsBackend/CMakeLists.txt
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/CMakeLists.txt
+@@ -0,0 +1,36 @@
++ecm_qt_declare_logging_category(xbpsbackend_SRCS
++    HEADER xbps_backend_logging.h
++    IDENTIFIER LOG_XBPSBACKEND
++    CATEGORY_NAME org.kde.plasma.discover.xbps
++    DEFAULT_SEVERITY Debug
++)
++
++set(xbpsbackend_SRCS
++    XbpsBackend.cpp
++    XbpsBackend.h
++    XbpsResource.cpp
++    XbpsResource.h
++    XbpsTransaction.cpp
++    XbpsTransaction.h
++    XbpsSourcesBackend.cpp
++    XbpsSourcesBackend.h
++    XbpsUpdater.cpp
++    XbpsUpdater.h
++)
++
++kcoreaddons_add_plugin(xbps-backend SOURCES ${xbpsbackend_SRCS} INSTALL_NAMESPACE "discover")
++kde_target_enable_exceptions(xbps-backend PRIVATE)
++target_link_libraries(xbps-backend
++    PRIVATE
++        Qt::Core
++        Qt::Widgets
++        Qt::Concurrent
++        KF6::CoreAddons
++        KF6::ConfigCore
++        KF6::KIOCore
++        Discover::Common
++)
++
++install(TARGETS xbps-backend DESTINATION ${KDE_INSTALL_PLUGINDIR}/discover)
++install(FILES org.kde.discover.xbps.policy DESTINATION ${KDE_INSTALL_DATADIR}/polkit-1/actions)
++
+diff --git a/libdiscover/backends/XbpsBackend/XbpsBackend.h b/libdiscover/backends/XbpsBackend/XbpsBackend.h
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/XbpsBackend.h
+@@ -0,0 +1,92 @@
++/*
++ *   SPDX-FileCopyrightText: 2026 Void Linux
++ *
++ *   SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++#ifndef XBPSBACKEND_H
++#define XBPSBACKEND_H
++
++#include <resources/AbstractResourcesBackend.h>
++#include <QHash>
++#include <QTimer>
++
++class XbpsResource;
++class XbpsUpdater;
++class XbpsReviewsBackend;
++
++class XbpsBackend : public AbstractResourcesBackend
++{
++    Q_OBJECT
++
++public:
++    explicit XbpsBackend(QObject *parent = nullptr);
++    ~XbpsBackend() override;
++
++    QList<std::shared_ptr<Category>> category() const override;
++    int updatesCount() const override;
++    AbstractBackendUpdater *backendUpdater() const override;
++    AbstractReviewsBackend *reviewsBackend() const override;
++    ResultsStream *search(const AbstractResourcesBackend::Filters &filter) override;
++    bool isValid() const override { return true; }
++
++    Transaction *installApplication(AbstractResource *app) override;
++    Transaction *installApplication(AbstractResource *app, const AddonList &addons) override;
++    Transaction *removeApplication(AbstractResource *app) override;
++
++    int fetchingUpdatesProgress() const override;
++    void checkForUpdates() override;
++    QString displayName() const override;
++    bool hasApplications() const override;
++
++    XbpsResource *resourceByPackageName(const QString &name) const;
++    void addResource(XbpsResource *res);
++
++public Q_SLOTS:
++    void refreshInstalled();
++    void refreshUpdates();
++
++private:
++    void loadInstalled();
++    void loadUpdates();
++
++    QHash<QString, XbpsResource *> m_resources;
++    XbpsUpdater *m_updater = nullptr;
++    XbpsReviewsBackend *m_reviews = nullptr;
++    bool m_fetching = false;
++    int m_fetchProgress = 0;
++    QTimer *m_updatesTimer = nullptr;
++};
++
++#endif
+diff --git a/libdiscover/backends/XbpsBackend/XbpsBackend.cpp b/libdiscover/backends/XbpsBackend/XbpsBackend.cpp
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/XbpsBackend.cpp
+@@ -0,0 +1,237 @@
++/*
++ *   SPDX-FileCopyrightText: 2026 Void Linux
++ *
++ *   SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++#include "XbpsBackend.h"
++#include "XbpsResource.h"
++#include "XbpsTransaction.h"
++#include "XbpsUpdater.h"
++#include "XbpsSourcesBackend.h"
++#include "../DiscoverVersion.h"
++#include <resources/StandardBackendUpdater.h>
++#include <Transaction/Transaction.h>
++#include <Transaction/TransactionModel.h>
++#include <resources/SourcesModel.h>
++
++#include <KLocalizedString>
++#include <KPluginFactory>
++#include <QProcess>
++#include <QRegularExpression>
++#include <QTimer>
++#include <QDebug>
++
++#include "xbps_backend_logging.h"
++
++DISCOVER_BACKEND_PLUGIN(XbpsBackend)
++
++XbpsBackend::XbpsBackend(QObject *parent)
++    : AbstractResourcesBackend(parent)
++    , m_updater(new XbpsUpdater(this))
++    , m_reviews(nullptr)
++    , m_updatesTimer(new QTimer(this))
++{
++    connect(m_updater, &XbpsUpdater::updatesCountChanged, this, &XbpsBackend::updatesCountChanged);
++    connect(TransactionModel::global(), &TransactionModel::lastTransactionFinished, this, &XbpsBackend::checkForUpdates);
++    
++    SourcesModel::global()->addSourcesBackend(new XbpsSourcesBackend(this));
++    
++    m_updatesTimer->setSingleShot(true);
++    connect(m_updatesTimer, &QTimer::timeout, this, &XbpsBackend::refreshUpdates);
++    
++    QTimer::singleShot(0, this, &XbpsBackend::refreshInstalled);
++    QTimer::singleShot(100, this, &XbpsBackend::checkForUpdates);
++}
++
++XbpsBackend::~XbpsBackend() = default;
++
++XbpsResource *XbpsBackend::resourceByPackageName(const QString &name) const
++{
++    return m_resources.value(name);
++}
++
++void XbpsBackend::addResource(XbpsResource *res)
++{
++    res->setParent(this);
++    m_resources[res->packageName()] = res;
++}
++
++void XbpsBackend::refreshInstalled()
++{
++    loadInstalled();
++}
++
++void XbpsBackend::refreshUpdates()
++{
++    loadUpdates();
++}
++
++void XbpsBackend::loadInstalled()
++{
++    QProcess proc;
++    proc.start(QStringLiteral("xbps-query"), {QStringLiteral("-l")});
++    proc.waitForFinished(10000);
++    QByteArray out = proc.readAllStandardOutput();
++    
++    for (const QByteArray &line : out.split('\n')) {
++        if (line.isEmpty()) continue;
++        // Format: ii package-version_1 description
++        if (line.size() < 3) continue;
++        QString s = QString::fromUtf8(line);
++        if (!s.startsWith(QStringLiteral("ii ")) && !s.startsWith(QStringLiteral("uu "))) continue;
++        QString rest = s.mid(3);
++        int space = rest.indexOf(QLatin1Char(' '));
++        if (space < 0) continue;
++        QString pkgver = rest.left(space);
++        QString desc = rest.mid(space + 1).trimmed();
++        // strip leading spaces/tabs
++        while (!desc.isEmpty() && (desc.at(0).isSpace() || desc.at(0) == QLatin1Char('\t'))) desc.remove(0, 1);
++        // extract package name
++        int dash = pkgver.lastIndexOf(QLatin1Char('-'));
++        while (dash > 0 && pkgver[dash - 1].isDigit()) {
++            dash = pkgver.lastIndexOf(QLatin1Char('-'), dash - 1);
++        }
++        // find first '-' followed by digit from right in version part? easier: split on last '-' before version
++        // xbps-query -l shows pkgver as name-version_revision; name has no '-' before version usually
++        // try to find pattern -digits
++        QRegularExpression re(QStringLiteral("^(.*)-([0-9].*)$"));
++        QRegularExpressionMatch m = re.match(pkgver);
++        QString pkgname = m.hasMatch() ? m.captured(1) : pkgver;
++        if (m_resources.contains(pkgname)) continue;
++        XbpsResource *res = new XbpsResource(pkgname, pkgver, desc, this, AbstractResource::Installed);
++        addResource(res);
++    }
++    Q_EMIT contentsChanged();
++}
++
++void XbpsBackend::loadUpdates()
++{
++    QProcess proc;
++    proc.start(QStringLiteral("xbps-install"), {QStringLiteral("-nSu")});
++    proc.waitForFinished(30000);
++    QByteArray out = proc.readAllStandardOutput();
++    int count = 0;
++    for (const QByteArray &line : out.split('\n')) {
++        if (line.isEmpty()) continue;
++        if (line.contains("update")) count++;
++    }
++    m_updater->setUpdatesCount(count);
++}
++
++ResultsStream *XbpsBackend::search(const AbstractResourcesBackend::Filters &filter)
++{
++    ResultsStream *stream = new ResultsStream(QStringLiteral("XbpsSearch"));
++    if (filter.search.isEmpty()) {
++        QTimer::singleShot(0, stream, &ResultsStream::finish);
++        return stream;
++    }
++    
++    QProcess *proc = new QProcess(stream);
++    proc->setProgram(QStringLiteral("xbps-query"));
++    proc->setArguments({QStringLiteral("-Rs"), filter.search});
++    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), stream, [this, stream, proc](int, QProcess::ExitStatus) {
++        QByteArray out = proc->readAllStandardOutput();
++        QVector<StreamResult> results;
++        for (const QByteArray &line : out.split('\n')) {
++            if (line.isEmpty()) continue;
++            QString s = QString::fromUtf8(line);
++            if (s.startsWith(QStringLiteral("[-]")) || s.startsWith(QStringLiteral("[*]"))) {
++                QString rest = s.mid(4).trimmed();
++                int space = rest.indexOf(QLatin1Char(' '));
++                if (space < 0) continue;
++                QString pkgver = rest.left(space).trimmed();
++                QString desc = rest.mid(space + 1).trimmed();
++                while (!desc.isEmpty() && desc.at(0).isSpace()) desc.remove(0, 1);
++                QRegularExpression re(QStringLiteral("^(.*)-([0-9].*)$"));
++                QRegularExpressionMatch m = re.match(pkgver);
++                QString pkgname = m.hasMatch() ? m.captured(1) : pkgver;
++                if (!m_resources.contains(pkgname)) {
++                    XbpsResource *res = new XbpsResource(pkgname, pkgver, desc, this, AbstractResource::None);
++                    m_resources[pkgname] = res;
++                }
++                results << StreamResult(m_resources[pkgname]);
++            }
++        }
++        Q_EMIT stream->resourcesFound(results);
++        stream->finish();
++        proc->deleteLater();
++    });
++    proc->start();
++    return stream;
++}
++
++Transaction *XbpsBackend::installApplication(AbstractResource *app)
++{
++    return installApplication(app, AddonList());
++}
++
++Transaction *XbpsBackend::installApplication(AbstractResource *app, const AddonList &)
++{
++    return new XbpsTransaction(qobject_cast<XbpsResource *>(app), Transaction::InstallRole);
++}
++
++Transaction *XbpsBackend::removeApplication(AbstractResource *app)
++{
++    return new XbpsTransaction(qobject_cast<XbpsResource *>(app), Transaction::RemoveRole);
++}
++
++int XbpsBackend::fetchingUpdatesProgress() const
++{
++    return m_fetching ? 0 : 100;
++}
++
++void XbpsBackend::checkForUpdates()
++{
++    m_updatesTimer->start(0);
++}
++
++QString XbpsBackend::displayName() const
++{
++    return i18nc("Backend plugin display name", "xbps");
++}
++
++bool XbpsBackend::hasApplications() const
++{
++    return true;
++}
++
++#include "XbpsBackend.moc"
+diff --git a/libdiscover/backends/XbpsBackend/XbpsResource.h b/libdiscover/backends/XbpsBackend/XbpsResource.h
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/XbpsResource.h
+@@ -0,0 +1,87 @@
++/*
++ *   SPDX-FileCopyrightText: 2026 Void Linux
++ *
++ *   SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++#ifndef XBPSRESOURCE_H
++#define XBPSRESOURCE_H
++
++#include <resources/AbstractResource.h>
++#include <QIcon>
++
++class XbpsBackend;
++
++class XbpsResource : public AbstractResource
++{
++    Q_OBJECT
++
++public:
++    XbpsResource(const QString &packageName, const QString &packageVersion, const QString &summary, XbpsBackend *parent, AbstractResource::State state);
++
++    QList<PackageState> addonsInformation() override { return {}; }
++    QString section() override { return QStringLiteral("System"); }
++    QString origin() const override { return QStringLiteral("xbps"); }
++    QString longDescription() override { return m_summary; }
++    QString availableVersion() const override { return m_version; }
++    QString installedVersion() const override { return m_installedVersion; }
++    QJsonArray licenses() override { return {}; }
++    quint64 size() override { return 0; }
++    QUrl homepage() override { return {}; }
++    QUrl helpURL() override { return {}; }
++    QUrl bugURL() override { return {}; }
++    QUrl donationURL() override { return {}; }
++    bool hasCategory(const QString &) const override { return false; }
++    AbstractResource::State state() override { return m_state; }
++    QVariant icon() const override { return QIcon::fromTheme(QStringLiteral("application-x-rpm")); }
++    QString comment() override { return m_summary; }
++    QString name() const override { return m_packageName; }
++    QString packageName() const override { return m_packageName; }
++    AbstractResource::Type type() const override { return Technical; }
++    bool canExecute() const override { return false; }
++    void invokeApplication() const override {}
++    void fetchChangelog() override {}
++    void fetchScreenshots() override {}
++    QString appstreamId() const override { return m_packageName; }
++    QUrl url() const override { return {}; }
++    QString author() const override { return {}; }
++    QString sourceIcon() const override { return QStringLiteral("application-x-rpm"); }
++    QDate releaseDate() const override { return {}; }
++
++    void setState(AbstractResource::State state) { m_state = state; }
++    void setInstalledVersion(const QString &v) { m_installedVersion = v; }
++
++private:
++    QString m_packageName;
++    QString m_version;
++    QString m_installedVersion;
++    QString m_summary;
++    AbstractResource::State m_state;
++};
++
++#endif
+diff --git a/libdiscover/backends/XbpsBackend/XbpsResource.cpp b/libdiscover/backends/XbpsBackend/XbpsResource.cpp
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/XbpsResource.cpp
+@@ -0,0 +1,23 @@
++/*
++ *   SPDX-FileCopyrightText: 2026 Void Linux
++ *
++ *   SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++#include "XbpsResource.h"
++
++XbpsResource::XbpsResource(const QString &packageName, const QString &packageVersion, const QString &summary, XbpsBackend *parent, AbstractResource::State state)
++    : AbstractResource(parent)
++    , m_packageName(packageName)
++    , m_version(packageVersion)
++    , m_installedVersion(state == AbstractResource::Installed ? packageVersion : QString())
++    , m_summary(summary)
++    , m_state(state)
++{
++    if (state == AbstractResource::Upgradeable) {
++        m_installedVersion.clear();
++    }
++}
++
++#include "XbpsResource.moc"
++
+diff --git a/libdiscover/backends/XbpsBackend/XbpsTransaction.h b/libdiscover/backends/XbpsBackend/XbpsTransaction.h
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/XbpsTransaction.h
+@@ -0,0 +1,44 @@
++/*
++ *   SPDX-FileCopyrightText: 2026 Void Linux
++ *
++ *   SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++#ifndef XBPSTRANSACTION_H
++#define XBPSTRANSACTION_H
++
++#include <Transaction/Transaction.h>
++#include <QProcess>
++
++class XbpsResource;
++
++class XbpsTransaction : public Transaction
++{
++    Q_OBJECT
++
++public:
++    XbpsTransaction(XbpsResource *app, Role role);
++    ~XbpsTransaction() override;
++
++    void cancel() override;
++
++private Q_SLOTS:
++    void processFinished(int exitCode, QProcess::ExitStatus exitStatus);
++    void processError(QProcess::ProcessError error);
++    void processOutput();
++
++private:
++    QProcess *m_process = nullptr;
++    QString m_actionText;
++};
++
++#endif
+diff --git a/libdiscover/backends/XbpsBackend/XbpsTransaction.cpp b/libdiscover/backends/XbpsBackend/XbpsTransaction.cpp
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/XbpsTransaction.cpp
+@@ -0,0 +1,108 @@
++/*
++ *   SPDX-FileCopyrightText: 2026 Void Linux
++ *
++ *   SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++#include "XbpsTransaction.h"
++#include "XbpsResource.h"
++#include <KLocalizedString>
++#include <QDebug>
++
++XbpsTransaction::XbpsTransaction(XbpsResource *app, Role role)
++    : Transaction(app, app, role, QString())
++    , m_process(new QProcess(this))
++{
++    setStatus(SetupStatus);
++    setCancellable(true);
++
++    QString prog;
++    QStringList args;
++
++    if (role == InstallRole) {
++        m_actionText = i18nc("@info Status information, widget title", "Installing");
++        prog = QStringLiteral("pkexec");
++        args << QStringLiteral("xbps-install") << QStringLiteral("-y") << QStringLiteral("--") << app->packageName();
++    } else if (role == RemoveRole) {
++        m_actionText = i18nc("@info Status information, widget title", "Removing");
++        prog = QStringLiteral("pkexec");
++        args << QStringLiteral("xbps-remove") << QStringLiteral("-y") << QStringLiteral("--") << app->packageName();
++    } else {
++        prog = QStringLiteral("xbps-install");
++        args << QStringLiteral("-nSu");
++    }
++
++    setStatus(DownloadingStatus);
++
++    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &XbpsTransaction::processFinished);
++    connect(m_process, &QProcess::errorOccurred, this, &XbpsTransaction::processError);
++    connect(m_process, &QProcess::readyReadStandardOutput, this, &XbpsTransaction::processOutput);
++    connect(m_process, &QProcess::readyReadStandardError, this, &XbpsTransaction::processOutput);
++
++    m_process->setProgram(prog);
++    m_process->setArguments(args);
++    m_process->start();
++}
++
++XbpsTransaction::~XbpsTransaction()
++{
++    if (m_process && m_process->state() == QProcess::Running) {
++        m_process->kill();
++    }
++}
++
++void XbpsTransaction::cancel()
++{
++    if (m_process && m_process->state() == QProcess::Running) {
++        m_process->kill();
++        setStatus(CancelledStatus);
++    }
++}
++
++void XbpsTransaction::processOutput()
++{
++    if (!m_process) return;
++    QByteArray out = m_process->readAllStandardOutput();
++    if (!out.isEmpty()) {
++        QString msg = QString::fromUtf8(out).trimmed();
++        if (!msg.isEmpty()) {
++            setProgressText(msg);
++        }
++    }
++    QByteArray err = m_process->readAllStandardError();
++    if (!err.isEmpty()) {
++        QString msg = QString::fromUtf8(err).trimmed();
++        if (!msg.isEmpty()) {
++            setProgressText(msg);
++        }
++    }
++}
++
++void XbpsTransaction::processFinished(int exitCode, QProcess::ExitStatus exitStatus)
++{
++    if (exitStatus != QProcess::NormalExit || exitCode != 0) {
++        setStatus(DoneWithErrorStatus);
++        return;
++    }
++    setStatus(DoneStatus);
++}
++
++void XbpsTransaction::processError(QProcess::ProcessError error)
++{
++    qWarning() << "XbpsTransaction error:" << error;
++    setStatus(DoneWithErrorStatus);
++}
++
++#include "XbpsTransaction.moc"
++
+diff --git a/libdiscover/backends/XbpsBackend/XbpsUpdater.h b/libdiscover/backends/XbpsBackend/XbpsUpdater.h
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/XbpsUpdater.h
+@@ -0,0 +1,49 @@
++/*
++ *   SPDX-FileCopyrightText: 2026 Void Linux
++ *
++ *   SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++#ifndef XBPSUPDATER_H
++#define XBPSUPDATER_H
++
++#include <resources/StandardBackendUpdater.h>
++#include <QProcess>
++
++class XbpsBackend;
++
++class XbpsUpdater : public StandardBackendUpdater
++{
++    Q_OBJECT
++
++public:
++    explicit XbpsUpdater(XbpsBackend *parent);
++
++    void prepare() override;
++    void proceed() override;
++    void cancel() override;
++    bool hasUpdates() const override;
++    double progress() const override { return m_progress; }
++
++    void setUpdatesCount(int c) { m_updatesCount = c; Q_EMIT updatesCountChanged(); }
++
++private Q_SLOTS:
++    void processFinished(int exitCode, QProcess::ExitStatus exitStatus);
++    void processOutput();
++
++private:
++    XbpsBackend *m_backend;
++    QProcess *m_process = nullptr;
++    int m_updatesCount = 0;
++    double m_progress = 0;
++};
++
++#endif
+diff --git a/libdiscover/backends/XbpsBackend/XbpsUpdater.cpp b/libdiscover/backends/XbpsBackend/XbpsUpdater.cpp
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/XbpsUpdater.cpp
+@@ -0,0 +1,84 @@
++/*
++ *   SPDX-FileCopyrightText: 2026 Void Linux
++ *
++ *   SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++#include "XbpsUpdater.h"
++#include "XbpsBackend.h"
++#include <KLocalizedString>
++
++XbpsUpdater::XbpsUpdater(XbpsBackend *parent)
++    : StandardBackendUpdater(parent)
++    , m_backend(parent)
++{
++}
++
++void XbpsUpdater::prepare()
++{
++    setStatus(Status::Done);
++    setProceeding(false);
++}
++
++void XbpsUpdater::proceed()
++{
++    if (m_process && m_process->state() == QProcess::Running) {
++        return;
++    }
++    m_process = new QProcess(this);
++    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &XbpsUpdater::processFinished);
++    connect(m_process, &QProcess::readyReadStandardOutput, this, &XbpsUpdater::processOutput);
++    connect(m_process, &QProcess::readyReadStandardError, this, &XbpsUpdater::processOutput);
++    
++    setStatus(Status::Proceeding);
++    m_process->setProgram(QStringLiteral("pkexec"));
++    m_process->setArguments({QStringLiteral("xbps-install") << QStringLiteral("-y") << QStringLiteral("-u")});
++    // Better: sync first? The handoff says pkexec -S for refresh; keep simple
++    m_process->setArguments({QStringLiteral("xbps-install"), QStringLiteral("-y"), QStringLiteral("-u")});
++    // Use pkexec
++    m_process->setProgram(QStringLiteral("pkexec"));
++    m_process->setArguments({QStringLiteral("xbps-install"), QStringLiteral("-y"), QStringLiteral("-u")});
++    m_process->start();
++}
++
++void XbpsUpdater::cancel()
++{
++    if (m_process && m_process->state() == QProcess::Running) {
++        m_process->kill();
++    }
++    setStatus(Status::Cancelled);
++}
++
++bool XbpsUpdater::hasUpdates() const
++{
++    return m_updatesCount > 0;
++}
++
++void XbpsUpdater::processOutput()
++{
++    if (!m_process) return;
++    QByteArray out = m_process->readAllStandardOutput();
++    if (!out.isEmpty()) {
++        QString msg = QString::fromUtf8(out).trimmed();
++        if (!msg.isEmpty()) setMessage(msg);
++    }
++}
++
++void XbpsUpdater::processFinished(int exitCode, QProcess::ExitStatus exitStatus)
++{
++    if (exitStatus == QProcess::NormalExit && exitCode == 0) {
++        setStatus(Status::Done);
++        m_updatesCount = 0;
++        Q_EMIT updatesCountChanged();
++    } else {
++        setStatus(Status::Error);
++    }
++}
++
++#include "XbpsUpdater.moc"
++
+diff --git a/libdiscover/backends/XbpsBackend/XbpsSourcesBackend.h b/libdiscover/backends/XbpsBackend/XbpsSourcesBackend.h
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/XbpsSourcesBackend.h
+@@ -0,0 +1,43 @@
++/*
++ *   SPDX-FileCopyrightText: 2026 Void Linux
++ *
++ *   SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++#ifndef XBPSSOURCESBACKEND_H
++#define XBPSSOURCESBACKEND_H
++
++#include <resources/AbstractSourcesBackend.h>
++
++class XbpsBackend;
++
++class XbpsSourcesBackend : public AbstractSourcesBackend
++{
++    Q_OBJECT
++
++public:
++    explicit XbpsSourcesBackend(XbpsBackend *parent = nullptr);
++    int sourcesCount() const override { return 1; }
++    QAbstractItemModel *sources() override { return nullptr; }
++    bool addSource(const QString &id) override { Q_UNUSED(id); return false; }
++    bool removeSource(const QString &sourceId) override { Q_UNUSED(sourceId); return false; }
++    QString id() const override { return QStringLiteral("xbps-backend"); }
++    bool canAddSource() const override { return false; }
++    QUrl addSourceInput() const override { return {}; }
++    ResultsStream *search(const AbstractResourcesBackend::Filters &search) override { Q_UNUSED(search); return nullptr; }
++};
++
++#endif
+diff --git a/libdiscover/backends/XbpsBackend/XbpsSourcesBackend.cpp b/libdiscover/backends/XbpsBackend/XbpsSourcesBackend.cpp
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/XbpsSourcesBackend.cpp
+@@ -0,0 +1,15 @@
++/*
++ *   SPDX-FileCopyrightText: 2026 Void Linux
++ *
++ *   SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++#include "XbpsSourcesBackend.h"
++#include "XbpsBackend.h"
++
++XbpsSourcesBackend::XbpsSourcesBackend(XbpsBackend *parent)
++    : AbstractSourcesBackend(parent)
++{
++}
++
++#include "XbpsSourcesBackend.moc"
++
+diff --git a/libdiscover/backends/XbpsBackend/org.kde.discover.xbps.policy b/libdiscover/backends/XbpsBackend/org.kde.discover.xbps.policy
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/libdiscover/backends/XbpsBackend/org.kde.discover.xbps.policy
+@@ -0,0 +1,32 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE policyconfig PUBLIC "-//freedesktop.org//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
++<policyconfig>
++  <vendor>KDE Discover</vendor>
++  <vendor_url>https://apps.kde.org/discover</vendor_url>
++  <icon_name>package-x-generic</icon_name>
++  <action id="org.kde.discover.xbps.install">
++    <description>Install and remove xbps packages via Discover</description>
++    <message>Authentication is required to install or remove software</message>
++    <defaults>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
++      <allow_active>auth_admin</allow_active>
++    </defaults>
++    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/xbps-install</annotate>
++  </action>
++  <action id="org.kde.discover.xbps.remove">
++    <description>Remove xbps packages via Discover</description>
++    <message>Authentication is required to remove software</message>
++    <defaults>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
++      <allow_active>auth_admin</allow_active>
++    </defaults>
++    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/xbps-remove</annotate>
++  </action>
++</policyconfig>
++
+diff --git a/org.kde.discover.appdata.xml b/org.kde.discover.appdata.xml
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/org.kde.discover.appdata.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<component type="desktop-application">
++  <id>org.kde.discover</id>
++  <name>Discover</name>
++  <summary>Discover</summary>
++  <metadata_license>CC0-1.0</metadata_license>
++</component>
