@@ -101,6 +101,12 @@ void XbpsSourcesBackend::loadSources()
         item->setData(url, DisambiguatedIdRole);
         item->setData(i18n("%n package(s)", packages.toInt()), Qt::ToolTipRole);
         item->setEditable(false);
+        // The repositories listed by xbps-query -L are always active and
+        // cannot be toggled from Discover (addSource/removeSource are
+        // unsupported). Report Qt::Checked so the Sources page checkbox
+        // renders checked-and-disabled instead of reading an undefined
+        // checkState (QML: "Unable to assign [undefined] to int").
+        item->setCheckState(Qt::Checked);
         m_sourcesModel->appendRow(item);
     }
 }

@@ -38,8 +38,18 @@ unsigned and every install aborted).
 
 ### `[DISCOVER-XBPS]` — KDE Discover with a native xbps backend
 
-`discover-6.7.5_2` — the first template in this repository, and the first
+`discover-6.7.5_3` — the first template in this repository, and the first
 store that can install xbps packages natively on Void.
+
+**Revision 3 (2026-10-21)** — GUI walkthrough finding: Discover's Sources
+page logged `Unable to assign [undefined] to int` once per repository row,
+because the carried `XbpsSourcesBackend` model never set the `checkState`
+role. Rows now report `Qt::Checked` — the repositories listed by
+`xbps-query -L` are always active and cannot be toggled from Discover
+(`addSource`/`removeSource` are unsupported) — so the checkbox renders
+checked-and-disabled and the console is clean. Revision 2 was the first
+GUI-validated build (real install of `htop` through the store, flatpak
+coexistence confirmed).
 
 **Why.** Void's `discover-6.7.5` ships only the `flatpak`, `fwupd` and `kns`
 backends — there is **no xbps backend upstream at all**, and no PackageKit
