@@ -1,21 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop.org//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
 <policyconfig>
   <vendor>KDE Discover</vendor>
   <vendor_url>https://apps.kde.org/discover</vendor_url>
   <icon_name>package-x-generic</icon_name>
   <action id="org.kde.discover.xbps.install">
-    <description>Install and remove xbps packages via Discover</description>
-    <message>Authentication is required to install or remove software</message>
+    <description>Install xbps packages with Discover</description>
+    <message>Authentication is required to install software</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
       <allow_active>auth_admin</allow_active>
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/xbps-install</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">-y</annotate>
   </action>
   <action id="org.kde.discover.xbps.remove">
-    <description>Remove xbps packages via Discover</description>
+    <description>Remove xbps packages with Discover</description>
     <message>Authentication is required to remove software</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
@@ -23,5 +24,17 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/xbps-remove</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">-y</annotate>
+  </action>
+  <action id="org.kde.discover.xbps.update">
+    <description>Update the system with Discover</description>
+    <message>Authentication is required to update the system</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/xbps-install</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">-Syu</annotate>
   </action>
 </policyconfig>

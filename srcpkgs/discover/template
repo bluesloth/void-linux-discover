@@ -4,15 +4,42 @@ version=6.7.5
 revision=2
 archs="x86_64*"
 build_style=cmake
-hostmakedepends="extra-cmake-modules pkg-config"
-makedepends="kf6-kitemmodels-devel kf6-attica-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-kcrash-devel kf6-kdbusaddons-devel kf6-ki18n-devel kf6-kiconthemes-devel kf6-kidletime-devel kf6-kjobwidgets-devel kf6-kcmutils-devel kf6-kio-devel kf6-knewstuff-devel kf6-knotifications-devel kf6-kservice-devel kf6-kstatusnotifieritem-devel kf6-kwidgetsaddons-devel kf6-kwindowsystem-devel kirigami-addons-devel qcoro-qt6-devel qt6-concurrent-devel qt6-core-devel qt6-dbus-devel qt6-gui-devel qt6-network-devel qt6-declarative-devel qt6-webview-devel qt6-widgets-devel flatpak-devel fwupd-devel glib-devel polkit"
-depends="appstream appstream-qt kf6-kitemmodels kf6-attica kf6-kconfig kf6-kcoreaddons kf6-kcrash kf6-kdbusaddons kf6-ki18n kf6-kiconthemes kf6-kidletime kf6-kjobwidgets kf6-kcmutils kf6-kio kf6-knewstuff kf6-knotifications kf6-kservice kf6-kstatusnotifieritem kf6-kwidgetsaddons kf6-kwindowsystem kirigami-addons qcoro-qt6 qt6-concurrent qt6-core qt6-dbus qt6-gui qt6-network qt6-declarative qt6-webview qt6-widgets flatpak fwupd glib polkit"
+hostmakedepends="extra-cmake-modules gettext pkg-config"
+makedepends="kf6-kitemmodels-devel kf6-attica-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-kcrash-devel kf6-kdbusaddons-devel kf6-ki18n-devel kf6-kiconthemes-devel kf6-kidletime-devel kf6-kjobwidgets-devel kf6-kcmutils-devel kf6-kio-devel kf6-knewstuff-devel kf6-knotifications-devel kf6-kservice-devel kf6-kstatusnotifieritem-devel kf6-kwidgetsaddons-devel kf6-kwindowsystem-devel kf6-kirigami-devel kf6-kxmlgui-devel kf6-purpose-devel kirigami-addons-devel qcoro-qt6-devel qt6-base-devel qt6-declarative-devel qt6-webview-devel flatpak-devel fwupd-devel glib-devel polkit AppStream-devel AppStream-qt-devel"
+depends="AppStream AppStream-qt kf6-kitemmodels kf6-attica kf6-kconfig kf6-kcoreaddons kf6-kcrash kf6-kdbusaddons kf6-ki18n kf6-kiconthemes kf6-kidletime kf6-kjobwidgets kf6-kcmutils kf6-kio kf6-knewstuff kf6-knotifications kf6-kservice kf6-kstatusnotifieritem kf6-kwidgetsaddons kf6-kwindowsystem kf6-kirigami kf6-kxmlgui kf6-purpose kirigami-addons qcoro-qt6 qt6-base qt6-declarative qt6-webview flatpak fwupd glib polkit"
 make_check=no
 short_desc="KDE resources management flatpak, plasma plugins"
 maintainer="Void Linux <voidlinux@voidlinux.org>"
 license="GPL-2.0-or-later"
 homepage="https://apps.kde.org/discover"
 distfiles="https://download.kde.org/stable/plasma/6.7.5/discover-6.7.5.tar.xz"
-checksum=74cba8d587db09e1950a70b7ddf27fa7fe2e6f1ae71a0ec3a8906630522cb3dd
+checksum=e9830fffebc54c781dcb076db4ab9462ee27ddd7fd3769403a211743636e1f67
 
 configure_args="-DBUILD_XbpsBackend=ON"
+
+# The xbps backend is carried as a set of source files under files/xbps/ rather
+# than as a patch, so that a discover release bump does not invalidate the
+# diff context of a unified patch against upstream CMakeLists.txt.
+post_extract() {
+	local backend_dir=${wrksrc}/libdiscover/backends/XbpsBackend
+	mkdir -p "$backend_dir"
+	cp ${FILESDIR}/xbps/* "$backend_dir"/
+
+	# Wire the backend into the list of backends.
+	grep -q "add_subdirectory(XbpsBackend)" ${wrksrc}/libdiscover/backends/CMakeLists.txt || {
+		cat >> ${wrksrc}/libdiscover/backends/CMakeLists.txt <<-EOF
+
+		option(BUILD_XbpsBackend "Build xbps support." "ON")
+		if(BUILD_XbpsBackend)
+		    add_subdirectory(XbpsBackend)
+		endif()
+		EOF
+	}
+}
+
+# The polkit actions of the backend are not part of the upstream source tree,
+# so they are installed separately after the regular installation.
+post_install() {
+	install -Dm644 ${FILESDIR}/org.kde.discover.xbps.policy \
+		${DESTDIR}/usr/share/polkit-1/actions/org.kde.discover.xbps.policy
+}
