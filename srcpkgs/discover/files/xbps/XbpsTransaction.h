@@ -44,13 +44,22 @@ public:
     QVariant icon() const override;
 
     /**
+     * @returns the exit code of the privileged helper, or -1 when the helper
+     * never got as far as exiting. The updater uses this to tell pkexec's own
+     * failures (126: authorization dismissed, 127: command not runnable) apart
+     * from the package manager's verdict.
+     */
+    int errorCode() const;
+
+    /**
      * Creates a transaction that updates every package of the system.
      * The transaction is not bound to a single resource.
      */
-    static Transaction *createSystemUpdate(QObject *parent);
+    static XbpsTransaction *createSystemUpdate(QObject *parent);
 
 private:
     void start();
+    void reportFailure();
 
 private Q_SLOTS:
     void processFinished(int exitCode, QProcess::ExitStatus exitStatus);
@@ -61,6 +70,8 @@ private:
     QString m_program;
     QStringList m_arguments;
     QProcess *m_process = nullptr;
+    int m_errorCode = -1;
+    QString m_output;
 };
 
 #endif // XBPSTRANSACTION_H

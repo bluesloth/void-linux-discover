@@ -58,8 +58,37 @@ unsigned and every install aborted).
 
 ### `[DISCOVER-XBPS]` — KDE Discover with a native xbps backend
 
-`discover-6.7.5_5` — the first template in this repository, and the first
+`discover-6.7.5_7` — the first template in this repository, and the first
 store that can install xbps packages natively on Void.
+
+**Revision 7 (2026-10-22)** — fixes the spurious **"Update Issue"** sheet
+that appeared on *every* install and removal. The sheet is not driven by the
+transaction status at all: Discover opens it from `onPassiveMessage`
+(`DiscoverWindow.qml`), and its friendly text is the generic *"There was an
+issue during the update or installation process. Please try again later."*
+so **any** passive message raises it. The backend forwarded the helper's
+output verbatim as passive messages, and xbps writes its whole progress
+stream - download bars, unpacking, the summary line - to **stderr**, so the
+sheet popped up on every transaction while the package was in fact installed
+correctly (observed live on the box with `cmus` and `mplayer`: the packages
+landed, the sheet still claimed a failure).
+
+The output is now collected instead of forwarded, and follows the contract
+the other native backends use (see `AlpineApkTransaction`): a **successful**
+transaction says nothing at all, a **failed** one reports exactly one
+message, marked `Error:`, carrying the tail of the helper's output - the
+head is only the download log, the tail is where the reason is. pkexec's own
+exit codes are named separately (126: authentication was cancelled, 127: the
+helper could not be started) so the user is told what actually happened
+instead of being sent looking in the wrong place.
+
+**Revision 6 (2026-10-21)** — makes a failed attempt stop poisoning the
+next one. `XbpsUpdater` never cleared its error message, so a recoverable
+failure (a dismissed polkit prompt, a transient repository lock) left
+Discover's "the update failed" text attached for the rest of the window's
+lifetime: `start()` now resets the error message and a successful
+transaction clears it as well. It also tells pkexec's exit codes apart
+(126/127) from the package manager's own verdict.
 
 **Revision 5 (2026-10-21)** — fixes the Updates tab sticking on
 `(Fetching...)` forever. Discover's UI treats

@@ -28,7 +28,7 @@ XbpsTransaction::XbpsTransaction(QObject *parent, XbpsResource *resource, Role r
     QTimer::singleShot(0, this, &XbpsTransaction::start);
 }
 
-Transaction *XbpsTransaction::createSystemUpdate(QObject *parent)
+XbpsTransaction *XbpsTransaction::createSystemUpdate(QObject *parent)
 {
     // "-Syu" syncs the repositories and upgrades every package. The first
     // argument is not a bare "-Sy", so the polkit action that asks for the
@@ -99,33 +99,40 @@ QVariant XbpsTransaction::icon() const
     return QIcon::fromTheme(QStringLiteral("system-upgrade"));
 }
 
+int XbpsTransaction::errorCode() const
+{
+    return m_errorCode;
+}
+
 void XbpsTransaction::processOutput()
 {
     if (!m_process) {
         return;
     }
 
-    const QByteArray out = m_process->readAllStandardOutput();
-    if (!out.isEmpty()) {
-        const QString message = QString::fromUtf8(out).trimmed();
-        if (!message.isEmpty()) {
-            Q_EMIT passiveMessage(message);
-        }
-    }
-
-    const QByteArray err = m_process->readAllStandardError();
-    if (!err.isEmpty()) {
-        const QString message = QString::fromUtf8(err).trimmed();
-        if (!message.isEmpty()) {
-            Q_EMIT passiveMessage(message);
-        }
-    }
+    // The output of the helper is collected, not forwarded. Discover treats
+    // every passive message as something the user has to read: the QML shows
+    // them in a sheet titled "Update Issue" that offers a generic apology
+    // ("There was an issue during the update or installation process"), so
+    // relaying the helper's output as it arrives makes a perfectly successful
+    // installation look like a failure. xbps writes its progress - download
+    // bars, unpacking, the summary line - to stderr, so forwarding it
+    // verbatim produced that sheet on every single transaction, whether it
+    // succeeded or not.
+    //
+    // The upstream contract (see AlpineApkTransaction) is the opposite: the
+    // helper's output is only reported when the transaction fails, as a
+    // single message.
+    m_output += QString::fromUtf8(m_process->readAllStandardOutput());
+    m_output += QString::fromUtf8(m_process->readAllStandardError());
 }
 
 void XbpsTransaction::processFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
+    m_errorCode = (exitStatus == QProcess::NormalExit) ? exitCode : -1;
+
     if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-        setStatus(DoneWithErrorStatus);
+        reportFailure();
         return;
     }
 
@@ -137,13 +144,44 @@ void XbpsTransaction::processFinished(int exitCode, QProcess::ExitStatus exitSta
         }
     }
 
+    // A successful transaction says nothing: no passive message, so no
+    // "Update Issue" sheet.
     setStatus(DoneStatus);
+}
+
+void XbpsTransaction::reportFailure()
+{
+    // The tail of the output carries the reason - xbps prints the error
+    // after the progress - while the beginning is the download log. Only the
+    // last lines are worth showing.
+    QStringList lines = m_output.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    while (lines.size() > 12) {
+        lines.removeFirst();
+    }
+    const QString detail = lines.join(QLatin1Char('\n')).trimmed();
+
+    if (!detail.isEmpty()) {
+        Q_EMIT passiveMessage(i18n("Error:\n%1", detail));
+    } else if (m_errorCode == 126) {
+        // pkexec: the authorization dialogue was dismissed or denied.
+        Q_EMIT passiveMessage(i18n("Error:\nAuthentication was cancelled."));
+    } else if (m_errorCode == 127) {
+        // pkexec: the command could not be run at all.
+        Q_EMIT passiveMessage(i18n("Error:\nThe xbps helper could not be started."));
+    } else {
+        Q_EMIT passiveMessage(i18n("Error:\nThe xbps helper did not complete (exit code %1).", m_errorCode));
+    }
+
+    setStatus(DoneWithErrorStatus);
 }
 
 void XbpsTransaction::processError(QProcess::ProcessError error)
 {
     qWarning() << "Xbps transaction failed to run:" << error;
-    setStatus(DoneWithErrorStatus);
+    // A helper that could not even be started is the same condition pkexec
+    // reports as 127.
+    m_errorCode = (error == QProcess::FailedToStart) ? 127 : -1;
+    reportFailure();
 }
 
 #include "moc_XbpsTransaction.cpp"

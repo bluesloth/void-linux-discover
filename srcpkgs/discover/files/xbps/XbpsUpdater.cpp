@@ -117,6 +117,16 @@ void XbpsUpdater::start()
         return;
     }
 
+    // A failed attempt must not poison the next one. AbstractBackendUpdater
+    // only clears its error message when it is set to a different value, so a
+    // stale "the update failed" left over from a dismissed polkit prompt or a
+    // transient repository lock would otherwise stick to the updater for the
+    // rest of the window's lifetime - Discover keeps showing its "there was an
+    // issue" dialogue even after a retry has succeeded underneath (seen live
+    // on the box: first attempt errored, retry installed the package, the
+    // dialogue still claimed a failure).
+    setErrorMessage(QString());
+
     setProgress(0);
     setProgressing(true);
 
@@ -137,7 +147,7 @@ void XbpsUpdater::cancel()
 
 void XbpsUpdater::transactionStatusChanged()
 {
-    auto *transaction = qobject_cast<Transaction *>(sender());
+    auto *transaction = qobject_cast<XbpsTransaction *>(sender());
     if (!transaction) {
         return;
     }
@@ -151,10 +161,30 @@ void XbpsUpdater::transactionStatusChanged()
     case Transaction::DoneStatus:
         setProgress(100);
         m_lastUpdate = QDateTime::currentDateTime();
+        // Belt and braces with the reset in start(): a transaction that has
+        // succeeded cannot leave an error behind for the next one to inherit.
+        setErrorMessage(QString());
         setProgressing(false);
         break;
     case Transaction::DoneWithErrorStatus:
-        setErrorMessage(i18n("The system update failed."));
+        // pkexec distinguishes its own failures from the helper's: 126 means
+        // the authorization dialogue was dismissed or the request was denied,
+        // 127 means the command could not be run at all. Neither of those says
+        // anything about the packages, so reporting them as a failed update
+        // sends the user looking in the wrong place - name the actual
+        // condition instead. Any other non-zero code is the package manager's
+        // own verdict and does mean the transaction failed.
+        switch (transaction->errorCode()) {
+        case 126:
+            setErrorMessage(i18n("Authentication was cancelled."));
+            break;
+        case 127:
+            setErrorMessage(i18n("The xbps installer could not be started."));
+            break;
+        default:
+            setErrorMessage(i18n("The system update failed."));
+            break;
+        }
         setProgressing(false);
         break;
     case Transaction::CancelledStatus:
