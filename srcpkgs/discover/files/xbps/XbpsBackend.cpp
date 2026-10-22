@@ -323,6 +323,18 @@ void XbpsBackend::loadUpdates()
     m_upgradeableResources = upgradeable;
 
     m_updater->setUpgradeableResources(upgradeable);
+
+    // Discover's UI keeps the "Fetching..." state for as long as
+    // fetchingUpdatesProgress() is below 100 (DiscoverDrawer.qml,
+    // DiscoverWindow.qml). The probe above has now completed - whether it
+    // found updates or not - so the progress must be driven to 100 and the
+    // change signalled, or the Updates tab sticks on "(Fetching...)" for the
+    // lifetime of the window. This is the whole of the "refreshing" state in
+    // this backend: the metadata probe is a synchronous unprivileged dry run,
+    // so there is no intermediate progress to report.
+    m_fetchProgress = 100;
+    Q_EMIT fetchingUpdatesProgressChanged();
+
     Q_EMIT contentsChanged();
 }
 
@@ -419,6 +431,7 @@ int XbpsBackend::fetchingUpdatesProgress() const
 void XbpsBackend::checkForUpdates()
 {
     m_fetchProgress = 0;
+    Q_EMIT fetchingUpdatesProgressChanged();
     m_updatesTimer->start(0);
 }
 

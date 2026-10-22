@@ -58,8 +58,22 @@ unsigned and every install aborted).
 
 ### `[DISCOVER-XBPS]` — KDE Discover with a native xbps backend
 
-`discover-6.7.5_4` — the first template in this repository, and the first
+`discover-6.7.5_5` — the first template in this repository, and the first
 store that can install xbps packages natively on Void.
+
+**Revision 5 (2026-10-21)** — fixes the Updates tab sticking on
+`(Fetching...)` forever. Discover's UI treats
+`ResourcesModel.fetchingUpdatesProgress < 100` as "still fetching"
+(`DiscoverDrawer.qml`, `DiscoverWindow.qml`); the backend's
+`checkForUpdates()` dropped the progress to 0 before each probe but
+`loadUpdates()` never drove it back to 100 nor emitted
+`fetchingUpdatesProgressChanged()`, so the label never cleared (found
+live on the box in a real GUI session after the operator's flatpak
+update run). Both transitions now signal: `loadUpdates()` ends with
+`m_fetchProgress = 100` + the notify emission (the probe is a
+synchronous unprivileged dry run, so 0→100 with no intermediate steps
+is the honest progress), and `checkForUpdates()` signals the reset to 0
+for a re-check. No command, privilege or transaction change.
 
 **Revision 4 (2026-10-21)** — the template now advertises this repository's
 canonical maintainer identity, `Void Linux Stores <noreply@github.com>`,
