@@ -32,9 +32,12 @@ upstream provenance (the COSMIC epoch tags) and its tooling manages it.
 
 ## Status
 
-**Source only so far.** The templates build, but nothing is published from
-this repository yet: there is no served binary repository and no public
-export. A release, when it comes, must carry the re-signing caution below.
+**Published.** This repository *is* the served binary repository: it carries
+the packaging source (`srcpkgs/`, `tools/`) **and** the built, signed
+artifacts at its root, which GitHub Pages serves at
+<https://bluesloth.github.io/void-linux-discover/>. The first served release
+is `stores-r1` (2026-10-22) — see the release entry below. Every repack of
+the served repodata must carry the re-signing caution below.
 
 ## Release model
 
@@ -55,6 +58,39 @@ in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
 ## Unreleased
+
+_Nothing yet — the first served release is `stores-r1` below._
+
+---
+
+## stores-r1 — 2026-10-22
+
+The first served release of this repository: KDE Discover with a native xbps
+backend. The repository was published **directly** (no clean-room export, no
+separate artifact repo) with `tools/publish.sh`, which signs the packages and
+the index with `xbps-rindex`, copies the artifacts into the repository root,
+commits, tags `stores-rN` and pushes.
+
+### Served repository (root)
+
+- The built and signed binary repository: 1 `.xbps` package + its `.sig2`
+  signature and the signed `x86_64-repodata` index, served over GitHub Pages
+  at <https://bluesloth.github.io/void-linux-discover/>.
+- The served package is **`discover-6.7.5_7`** — revision 7, the exact build
+  the operator validated on the box (the shipped `xbps-backend.so` md5
+  `bb385531f1ddf30acb59b2d1d2f79429` matches the installed plugin).
+- Signed with this store's **own** repository signing key (RSA-4096, DER sha256
+  `4e40218a79784f0e4cc559b835c8e9f7585000d5b678177827a853a0937f17cf`). The
+  COSMIC signing key stays with the COSMIC repository — one key per served
+  repo, so a compromise or a rotation never couples two stores. The key
+  itself is never committed; only its public half is pinned, in
+  `coordination/PINS.md` §8 and (installer side) in the handoff §8 Q6.
+- The index embeds that public key and `signature-by =
+  Void Linux Stores <noreply@github.com>`; a client's trust anchor is the
+  key's fingerprint in `/var/db/xbps/keys/<hexfp>.plist`, which is why the
+  fingerprint — not the key — is the value worth pinning.
+- Release tag `stores-r1` = `d2a027a…`; the served index is
+  `sha256 e6c4631b…` and is byte-identical to the copy in this repository.
 
 ### `[DISCOVER-XBPS]` — KDE Discover with a native xbps backend
 

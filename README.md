@@ -1,8 +1,8 @@
 # void-linux-discover
 
 KDE Discover with a native **xbps** backend, packaged for Void Linux — the
-packaging source **and** (once published) the served binary repository for
-this store. One repository per store: GNOME Software lives in
+packaging source **and** the served binary repository for this store.
+One repository per store: GNOME Software lives in
 `private/void-linux-gnome-software/`, cosmic-store in
 `private/void-linux-cosmic/` (epoch-managed).
 
@@ -42,7 +42,7 @@ Overlays `srcpkgs/` into the checkout (idempotent), builds with `xbps-src`
 (defaults to every template carried here), output under
 `$XBPS_DISTDIR/hostdir/binpkgs/`.
 
-## Publish (not yet done)
+## Publish
 
 ```sh
 XBPS_SIGNING_KEY=/path/to/key tools/publish.sh --from hostdir/binpkgs [--push]
@@ -50,8 +50,12 @@ XBPS_SIGNING_KEY=/path/to/key tools/publish.sh --from hostdir/binpkgs [--push]
 
 Gates on `check-maintainer.sh`, signs packages + index, commits them into
 the repository root and tags `stores-rN`. `--dry-run` prints the plan.
-**Status: source only — no served repository, signing key or public export
-yet** (handoff §7 item 6/7).
+
+**Status: published** — release `stores-r1` (2026-10-22) serves
+`discover-6.7.5_7` (the build validated on the operator's box) at
+<https://bluesloth.github.io/void-linux-discover/>. The signing key is this
+store's own (DER sha256 `4e40218a…`); it lives off-repo and only its public
+fingerprint is pinned (`coordination/PINS.md` §8, installer handoff §8 Q6).
 
 ## Served repository layout
 
