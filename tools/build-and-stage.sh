@@ -1,19 +1,23 @@
 #!/bin/sh
 # build-and-stage.sh - overlay these templates onto a void-packages checkout,
-# build the COSMIC set with xbps-src, and stage a signed binary repository.
+# build the carried set with xbps-src, and stage the binary packages for
+# signing/publishing (tools/publish.sh).
 #
-# Building COSMIC is heavy (Rust). Run this on a Void Linux host or container
-# with the usual build prerequisites, not on a random machine.
+# Building GUI store stacks is heavy (Qt/KDE, GNOME). Run this on a Void
+# Linux host or container with the usual build prerequisites, not on a
+# random machine.
 #
 # Usage:
 #   XBPS_DISTDIR=/path/to/void-packages tools/build-and-stage.sh [pkg ...]
 #
 #   XBPS_DISTDIR   a void-packages clone (https://github.com/void-linux/void-packages)
-#   [pkg ...]      packages to build; defaults to cosmic-desktop-full, which
-#                  pulls the rest of the set in as dependencies.
+#   [pkg ...]      packages to build; defaults to every package carried in
+#                  srcpkgs/ (the whole set this repo serves).
 #
 # Environment:
-#   XBPS_ALLOW_RESTRICTED=yes     required by some COSMIC components
+#   XBPS_ALLOW_RESTRICTED=yes     only needed by templates with a restricted
+#                                 licence; none of ours carry one, so this is
+#                                 normally left unset
 #   XBPS_PKG_ARCH=x86_64          target architecture (default: host arch)
 #
 # The overlay is idempotent: our templates are copied over the checkout's, so
@@ -43,18 +47,25 @@ for d in "$root"/srcpkgs/*/; do
 done
 printf 'overlaid %d templates into %s\n' "$count" "$XBPS_DISTDIR/srcpkgs"
 
-# 2) the git-submodule cargo build style (libcosmic)
-cp -a "$root/common/build-style/cargo-gitmodules.sh" "$XBPS_DISTDIR/common/build-style/"
-
-# 3) extra shlibs entries, if any
+# 2) extra shlibs entries, if any
 if [ -s "$root/common/shlibs.append" ]; then
 	cat "$root/common/shlibs.append" >> "$XBPS_DISTDIR/common/shlibs"
 fi
 
-# 4) build
-set -- ${*:-cosmic-desktop-full}
+# 3) build: default to the full carried set
+if [ "$#" -gt 0 ]; then
+	:
+else
+	set --
+	for d in "$root"/srcpkgs/*/; do
+		set -- "$@" "$(basename "$d")"
+	done
+fi
+[ "$#" -gt 0 ] || {
+	printf 'build-and-stage: nothing to build (srcpkgs/ is empty)\n' >&2
+	exit 1
+}
 cd "$XBPS_DISTDIR"
-export XBPS_ALLOW_RESTRICTED=${XBPS_ALLOW_RESTRICTED:-yes}
 printf 'building: %s\n' "$*"
 ./xbps-src pkg "$@"
 
@@ -63,11 +74,12 @@ cat <<EOF
 Built. Packages are under:
   $XBPS_DISTDIR/hostdir/binpkgs/
 
-To publish, sign the packages and copy the .xbps / .sig2 files and the
-<arch>-repodata index into this repository's root (GitHub Pages serves them
-to the installer):
+To publish, stage and sign them with tools/publish.sh (it signs the packages
+and the index, commits them into this repository's root and tags the release;
+GitHub Pages then serves them to the stores):
 
-  xbps-rindex -d -a hostdir/binpkgs/<repo>/*.xbps
-  xbps-rindex --sign --signedby "Void Cosmic <noreply@github.com>" hostdir/binpkgs/<repo>
-  # copy .xbps / .sig2 / <arch>-repodata into this repo root, then commit + push
+  XBPS_SIGNING_KEY=/path/to/key tools/publish.sh --from hostdir/binpkgs [--push]
+
+NOTE: a repack of an already-served repository MUST be re-signed
+(xbps-rindex -f -a + -s), or clients abort on the stale signature.
 EOF

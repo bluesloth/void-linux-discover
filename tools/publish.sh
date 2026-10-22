@@ -1,12 +1,18 @@
 #!/bin/sh
 # publish.sh - stage a signed xbps repository into this repo, commit it, tag it
-# with the COSMIC epoch, and (optionally) push.
+# with the repo release tag, and (optionally) push.
 #
 # This repository is both the packaging source and the served binary repo. The
 # .xbps / .sig2 files and the <arch>-repodata index at the repo root are what
-# GitHub Pages serves to the installer. This script automates the last mile:
+# GitHub Pages serves to the stores. This script automates the last mile:
 #
 #     build (optional) -> sign (optional) -> stage -> commit -> tag -> push
+#
+# Unlike void-linux-cosmic there is no tracked epoch to tag with: the carried
+# templates track independent upstreams (KDE's, GNOME's, ...) with no shared
+# version mechanism, so a release is a monotonic repository counter:
+# `stores-r1`, `stores-r2`, ... The commit body names the exact package set,
+# so tag + commit together describe what is served.
 #
 # Usage:
 #     tools/publish.sh --from DIR [--push]
@@ -22,9 +28,9 @@
 #     --arch ARCH        package architecture / index name (default: x86_64)
 #     --resign           re-sign every package and the index (needs --privkey)
 #     --privkey FILE     signing key for xbps-rindex (or $XBPS_SIGNING_KEY)
-#     --signedby STR     signature identity (default below)
+#     --signedby STR     signature identity (default below; must match the key)
 #     --message TEXT     extra commit-message text
-#     --tag NAME         override the auto (epoch) tag
+#     --tag NAME         override the auto (`stores-rN`) tag
 #     --dry-run          print the plan and exit without changing anything
 #     --push             push the commit and tag (default: commit + tag locally)
 #     -h, --help         this help
@@ -39,10 +45,11 @@ branch=main
 arch=x86_64
 from=""; build=0; resign=0; push=0; dry=0; tag_override=0
 privkey=${XBPS_SIGNING_KEY:-}
-signedby='bluesloth <bluesloth@users.noreply.github.com>'
+signedby='Void Linux Stores <noreply@github.com>'
 message=""; tag=""
-git_name=${PUBLISH_GIT_NAME:-Void Linux Cosmic}
-git_email=${PUBLISH_GIT_EMAIL:-cosmic@localhost}
+git_name=${PUBLISH_GIT_NAME:-Void Linux Stores}
+git_email=${PUBLISH_GIT_EMAIL:-stores@localhost}
+tag_base=${PUBLISH_TAG_PREFIX:-stores}
 
 die() { printf 'publish: %s\n' "$1" >&2; exit "${2:-1}"; }
 
@@ -69,12 +76,9 @@ done
 
 cd "$root"
 [ -d .git ] || die "$root is not a git checkout"
-[ -f PINS.md ] || die "PINS.md not found — wrong directory?"
 
-# --- the tracked epoch ------------------------------------------------------
-epoch=$(sed -n 's/^Tracked epoch: `\([0-9][0-9.]*\)`.*/\1/p' PINS.md | head -n1)
-[ -n "$epoch" ] || epoch=$(sed -n 's/^version=//p' srcpkgs/cosmic-session/template 2>/dev/null | head -n1)
-[ -n "$epoch" ] || die "cannot determine the tracked epoch (PINS.md / cosmic-session template)"
+# --- pre-flight: the carried templates must be publishable -------------------
+[ "$dry" = 1 ] || tools/check-maintainer.sh || die "check-maintainer.sh failed"
 
 # --- optional build ---------------------------------------------------------
 if [ "$build" = 1 ]; then
@@ -94,26 +98,24 @@ npkg=$(printf '%s\n' "$pkgs" | wc -l | tr -d ' ')
 
 # --- resolve the next release tag (counting only tags on the remote) --------
 if [ -z "$tag" ]; then
-    base="epoch-$epoch"
-    remote_tags=$(git ls-remote --tags --refs origin "refs/tags/$base" "refs/tags/$base-r*" 2>/dev/null \
+    remote_tags=$(git ls-remote --tags --refs origin "refs/tags/$tag_base-r*" 2>/dev/null \
         | sed 's#.*refs/tags/##' || true)
-    if ! printf '%s\n' "$remote_tags" | grep -qx "$base"; then
-        tag=$base
-    else
-        n=1
-        for t in $remote_tags; do
-            case "$t" in
-                "$base"-r*)
-                    r=${t#"$base"-r}
-                    case "$r" in ''|*[!0-9]*) ;; *) [ "$r" -gt "$n" ] && n=$r ;; esac ;;
-            esac
-        done
-        tag="$base-r$((n + 1))"
-    fi
+    n=0
+    for t in $remote_tags; do
+        case "$t" in
+            "$tag_base"-r*)
+                r=${t#"$tag_base"-r}
+                case "$r" in
+                    ''|*[!0-9]*) ;;
+                    *) if [ "$r" -gt "$n" ]; then n=$r; fi ;;
+                esac ;;
+        esac
+    done
+    tag="$tag_base-r$((n + 1))"
 fi
 
-printf 'publish: epoch %s -> tag %s (%s package(s) from %s)\n' \
-    "$epoch" "$tag" "$npkg" "$from"
+printf 'publish: %s -> tag %s (%s package(s) from %s)\n' \
+    "$branch" "$tag" "$npkg" "$from"
 
 # --- sign (optional) --------------------------------------------------------
 if [ -n "$privkey" ]; then
@@ -159,7 +161,7 @@ if git diff --cached --quiet -- "*.$arch.xbps" "*.$arch.xbps.sig2" "$arch-repoda
     # failed): reuse that tag instead of inventing a revision.
     if [ "$tag_override" = 0 ]; then
         lt=$(git tag --points-at HEAD 2>/dev/null \
-            | grep -E "^epoch-${epoch}(-r[0-9]+)?$" | sort -V | tail -n1 || true)
+            | grep -E "^${tag_base}-r[0-9]+$" | sort -V | tail -n1 || true)
         if [ -n "$lt" ]; then tag=$lt; fi
     fi
     if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
@@ -170,7 +172,7 @@ if git diff --cached --quiet -- "*.$arch.xbps" "*.$arch.xbps.sig2" "$arch-repoda
         printf 'publish: tagged existing HEAD %s\n' "$tag"
     fi
 else
-    subject="repo: publish $arch repository (epoch $epoch)"
+    subject="repo: publish $arch repository as $tag"
     names=$(git diff --cached --name-only -- "*.$arch.xbps" | sed 's#.*/##' | sort)
     body=$(printf 'Packages:\n%s' "$(printf '%s\n' "$names" | sed 's/^/- /')")
     if [ -n "$message" ]; then body=$(printf '%s\n\n%s' "$body" "$message"); fi

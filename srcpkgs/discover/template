@@ -1,7 +1,7 @@
 # Template file for 'discover'
 pkgname=discover
 version=6.7.5
-revision=3
+revision=4
 archs="x86_64*"
 build_style=cmake
 hostmakedepends="extra-cmake-modules gettext pkg-config"
@@ -9,7 +9,7 @@ makedepends="kf6-kitemmodels-devel kf6-attica-devel kf6-kconfig-devel kf6-kcorea
 depends="AppStream AppStream-qt kf6-kitemmodels kf6-attica kf6-kconfig kf6-kcoreaddons kf6-kcrash kf6-kdbusaddons kf6-ki18n kf6-kiconthemes kf6-kidletime kf6-kjobwidgets kf6-kcmutils kf6-kio kf6-knewstuff kf6-knotifications kf6-kservice kf6-kstatusnotifieritem kf6-kwidgetsaddons kf6-kwindowsystem kf6-kirigami kf6-kxmlgui kf6-purpose kirigami-addons qcoro-qt6 qt6-base qt6-declarative qt6-webview flatpak fwupd glib polkit"
 make_check=no
 short_desc="KDE resources management flatpak, plasma plugins"
-maintainer="Void Linux <voidlinux@voidlinux.org>"
+maintainer="Void Linux Stores <noreply@github.com>"
 license="GPL-2.0-or-later"
 homepage="https://apps.kde.org/discover"
 distfiles="https://download.kde.org/stable/plasma/6.7.5/discover-6.7.5.tar.xz"

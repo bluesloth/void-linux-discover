@@ -6,11 +6,25 @@ file.
 
 ## What this repository is
 
-One repository, one template per store, each pinned to **its own** upstream
-release (KDE Discover, GNOME Software, …). The stores have **no shared
-version mechanism** with each other or with the COSMIC epoch tooling, so
-they are isolated by default; what they genuinely share — one xbps command
-map, one privilege idiom, one packaging pattern — lives here once.
+**One repository per store: this repo carries KDE Discover only** — its
+template, its backend sources and its polkit policy — each template pinned
+to **its own** upstream release. GNOME Software lives in its own repo
+(`private/void-linux-gnome-software/`); the stores have **no shared version
+mechanism** with each other or with the COSMIC epoch tooling, so they are
+isolated by default.
+
+**2026-10-21 — layout reversed to Option C (one repo per store).** The
+original decision (2026-10-20, Decision 2 / Option B) grouped Discover and
+GNOME Software in one shared `void-linux-stores` repo so that the layer they
+genuinely share — one xbps command map, one privilege idiom, one packaging
+pattern — would live once. The operator split them again **before the first
+publish**, which is the only cheap window: once a repo is served, its
+repodata, signing key, Pages site, installer repo URL and PINS rows all
+point at one repository and a split means re-serving, re-signing and
+re-pinning. Per-store repos make a one-store PR trivial (branch-scoped
+review), keep provenance store-pure and isolate publish blast radius. The
+cost — the shared layer now exists as identical copies of `tools/` in each
+store repo — is managed by editing both copies together.
 
 The cosmic-store backend is **not** here: it stays in
 `private/void-linux-cosmic/`, because that repository is organised by
@@ -28,6 +42,12 @@ Each store's template carries its own upstream `version=` and its own
 `revision=`; a store's release is identified by `<upstream-version>_<revision>`.
 Tracking a new upstream release is `tools/sync-upstream.sh`.
 
+The *repository* release tag — what `tools/publish.sh` stamps a served index
+with — is `stores-rN`, a monotonic per-repository counter (this repo's tags
+and `void-linux-gnome-software/`'s tags are independent): the carried
+templates track independent upstreams, so there is no shared epoch to key a
+tag on the way the COSMIC repository keys `epoch-N.M.P`.
+
 **Caution — repodata must be re-signed.** Any repack of this repository's
 repodata MUST be signed with the repository signing key. An unsigned repack
 makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
@@ -38,8 +58,17 @@ unsigned and every install aborted).
 
 ### `[DISCOVER-XBPS]` — KDE Discover with a native xbps backend
 
-`discover-6.7.5_3` — the first template in this repository, and the first
+`discover-6.7.5_4` — the first template in this repository, and the first
 store that can install xbps packages natively on Void.
+
+**Revision 4 (2026-10-21)** — the template now advertises this repository's
+canonical maintainer identity, `Void Linux Stores <noreply@github.com>`,
+instead of inheriting Void's own upstream identity
+(`Void Linux <voidlinux@voidlinux.org>`). The `maintainer=` field is written
+into the built package (`xbps-query -p maintainer`), so serving different
+bytes under the already-used pkgver `6.7.5_3` would give one version two
+byte-streams — hence the revision bump. Enforced from now on by
+`tools/check-maintainer.sh`, which `tools/publish.sh` runs as a pre-flight.
 
 **Revision 3 (2026-10-21)** — GUI walkthrough finding: Discover's Sources
 page logged `Unable to assign [undefined] to int` once per repository row,
