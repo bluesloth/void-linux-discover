@@ -1,2 +1,19 @@
+# Build inputs and outputs (re-downloadable / regenerable).
+# The published repository - the .xbps files, their .sig2 signatures and the
+# <arch>-repodata index the installer consumes - lives at the repository root
+# and IS tracked (GitHub Pages serves it). Only the scratch below is ignored.
+/distfiles/
+/hostdir/
+/build/
+*.tar.gz
+
+# Signing keys (never commit)
+*.pem
+
 # external, never committed (see tools/check-maintainer.sh)
 .maintainer-denylist
+
+# Editor / OS noise
+*.swp
+*~
+.DS_Store

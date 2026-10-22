@@ -15,6 +15,9 @@ this store. One repository per store: GNOME Software lives in
 | `srcpkgs/discover/files/org.kde.discover.xbps.policy` | three `auth_admin` actions: `.install` / `.remove` / `.update` |
 | `tools/` | build / gate / publish tooling (identical copies in both store repos — edit them together) |
 | `CHANGELOG.md` | the decision + release record |
+| `PINS.md` | source-distfile checksums of the published packages |
+| `LICENSING.md` | licensing statement for the repository and the carried package |
+| `.nojekyll`, `.gitattributes`, `.gitignore` | Pages + binary-hygiene rules for the served repository (mirrors the cosmic store repo) |
 
 ## House rules that apply here
 
@@ -49,6 +52,23 @@ Gates on `check-maintainer.sh`, signs packages + index, commits them into
 the repository root and tags `stores-rN`. `--dry-run` prints the plan.
 **Status: source only — no served repository, signing key or public export
 yet** (handoff §7 item 6/7).
+
+## Served repository layout
+
+Mirrors the cosmic store repo (`bluesloth/void-linux-cosmic`): **one
+repository carries both the packaging source and the served xbps
+repository** — there is no separate artifact repo. After `tools/publish.sh`
+the built artifacts live at the repository root (`*.x86_64.xbps`,
+`*.x86_64.xbps.sig2`, `x86_64-repodata`) and GitHub Pages serves them:
+
+| what | URL |
+| --- | --- |
+| repository (audit) | `https://github.com/bluesloth/void-linux-discover` |
+| index | `https://bluesloth.github.io/void-linux-discover/x86_64-repodata` |
+
+`.nojekyll` is present so Pages serves the raw binaries instead of passing
+them through Jekyll. The signing key stays off-repo (`--privkey` /
+`$XBPS_SIGNING_KEY`); only its public fingerprint is pinned in the installer.
 
 ## Validation
 
