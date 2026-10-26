@@ -1,14 +1,28 @@
 # Template file for 'discover'
 pkgname=discover
 version=6.7.5
-revision=7
+revision=8
 archs="x86_64*"
+#
+# DOWNSTREAM DELTA — xbps backend.  This template is Void's discover plus
+# srcpkgs/discover/files/xbps/ (the native xbps backend) and its polkit policy.
+# Based on Void's discover-6.7.5_1.
+#
+# REBASE RULE (why the revision looks high): `_N` is the xbps *revision* — a
+# per-repository build counter, not KDE's and not System76's numbering. It has
+# no cross-repo namespace, so any downstream rebuild must outrank upstream or
+# clients would compare equal and never upgrade to it. The flip side is that a
+# high `_N` also outranks a later *revision-only* upstream bump, so when Void
+# moves their revision (e.g. _1 -> _2) this template MUST be re-cut above it
+# (their _2 -> our _9) and the "Based on ..." line above updated, or their
+# packaging fix is silently masked on every store-provisioned box.
+# A new upstream *version* (6.7.6) needs no such care: it wins on its own.
 build_style=cmake
 hostmakedepends="extra-cmake-modules gettext pkg-config"
 makedepends="kf6-kitemmodels-devel kf6-attica-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-kcrash-devel kf6-kdbusaddons-devel kf6-ki18n-devel kf6-kiconthemes-devel kf6-kidletime-devel kf6-kjobwidgets-devel kf6-kcmutils-devel kf6-kio-devel kf6-knewstuff-devel kf6-knotifications-devel kf6-kservice-devel kf6-kstatusnotifieritem-devel kf6-kwidgetsaddons-devel kf6-kwindowsystem-devel kf6-kirigami-devel kf6-kxmlgui-devel kf6-purpose-devel kirigami-addons-devel qcoro-qt6-devel qt6-base-devel qt6-declarative-devel qt6-webview-devel flatpak-devel fwupd-devel glib-devel polkit AppStream-devel AppStream-qt-devel"
 depends="AppStream AppStream-qt kf6-kitemmodels kf6-attica kf6-kconfig kf6-kcoreaddons kf6-kcrash kf6-kdbusaddons kf6-ki18n kf6-kiconthemes kf6-kidletime kf6-kjobwidgets kf6-kcmutils kf6-kio kf6-knewstuff kf6-knotifications kf6-kservice kf6-kstatusnotifieritem kf6-kwidgetsaddons kf6-kwindowsystem kf6-kirigami kf6-kxmlgui kf6-purpose kirigami-addons qcoro-qt6 qt6-base qt6-declarative qt6-webview flatpak fwupd glib polkit"
 make_check=no
-short_desc="KDE resources management flatpak, plasma plugins"
+short_desc="KDE resources management flatpak, plasma plugins (xbps backend)"
 maintainer="Void Linux Stores <noreply@github.com>"
 license="GPL-2.0-or-later"
 homepage="https://apps.kde.org/discover"
