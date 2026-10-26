@@ -59,7 +59,57 @@ unsigned and every install aborted).
 
 ## Unreleased
 
-_Nothing yet — the first served release is `stores-r1` below._
+_Nothing yet — the newest served release is `stores-r2` below._
+
+---
+
+## stores-r2 — 2026-10-26
+
+A **metadata-only** re-cut of the served package so an installed box can be
+identified at a glance, plus the revision-numbering rule written down where a
+packager will actually read it.
+
+### Served repository (root)
+
+- The served package is now **`discover-6.7.5_8`** (`sha256 1e12fed3…`), built
+  from `f95dbb2` with `tools/build-and-stage.sh` + `xbps-src` (a real rebuild,
+  not a hand-edited repack) and signed by `tools/publish.sh`.
+- The shipped plugin is **byte-identical** to `stores-r1`'s:
+  `xbps-backend.so` md5 `bb385531f1ddf30acb59b2d1d2f79429`. Nothing in the
+  backend changed — only `props.plist`.
+- The signed `x86_64-repodata` is `sha256 3682bff9…` (2307 B) and lists
+  **only** `discover-6.7.5_8`; it is byte-identical to the copy in this
+  repository and to what Pages serves.
+- `discover-6.7.5_7`'s `.xbps` and `.sig2` stay at the repository root —
+  build numbers are not pruned (the cosmic store's monotonic-growth
+  behaviour), so a client holding `_7` still resolves it while the index
+  offers `_8`.
+- Release tag `stores-r2` = `59a100d…`; signed with the same store key
+  (DER sha256 `4e40218a…`), `signature-by = Void Linux Stores
+  <noreply@github.com>`.
+
+### `[DISCOVER-XBPS]` — revision 8
+
+- **`short_desc` marker.** It now ends with ` (xbps backend)`, so
+  `xbps-query -p short_desc discover` distinguishes this build from Void's
+  stock flatpak-only one without comparing `pkgver`. That mattered in
+  practice: after the `[DISCOVER-STORE-REPO-ORDER]` installer bug
+  (installer `Version-3.2.01`), a box could hold the **stock** `_1` while the
+  store was configured and reachable — the description is what makes that
+  obvious.
+- **Revision scheme documented, rebase rule included.** `_N` is xbps's
+  per-repository revision: it has no cross-repo namespace, so a downstream
+  rebuild must outrank upstream or clients compare equal and never upgrade.
+  The alternative scheme (mirroring the upstream revision, e.g.
+  `discover-6.7.5_1_0`) was **measured**, not guessed — `xbps-uhelper
+  cmpver` reports `6.7.5_1_0 == 6.7.5` and `6.7.5_1_0 < 6.7.5_7`, i.e. it
+  would be a downgrade while our revision is the high one. The flip side is
+  recorded as the rule: a high `_N` also outranks a later *revision-only*
+  upstream bump (`6.7.5_7 > 6.7.5_2`), so when Void moves their revision this
+  template must be re-cut above it (their `_2` → our `_9`) and the "Based on
+  …" line updated, or their fix is silently masked on every
+  store-provisioned box. A new upstream *version* needs no such care. The
+  rule lives next to `revision=` in `srcpkgs/discover/template`.
 
 ---
 
