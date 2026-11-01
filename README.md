@@ -52,19 +52,26 @@ Gates on `check-maintainer.sh`, signs packages + index, commits them into
 the repository root and tags `stores-rN`. `--dry-run` prints the plan.
 
 **Status: published** — <https://bluesloth.github.io/void-linux-discover/>
-serves **`discover-6.7.5_8`** as release `stores-r2` (2026-10-26); its
-predecessor `stores-r1` (2026-10-22) served `discover-6.7.5_7`. The signing
+serves **`discover-6.7.5_9`** as release `stores-r3` (2026-11-01); its
+predecessors `stores-r2` (2026-10-26) served `discover-6.7.5_8` and
+`stores-r1` (2026-10-22) served `discover-6.7.5_7`. The signing
 key is this store's own (DER sha256 `4e40218a…`); it lives off-repo and only
 its public fingerprint is pinned (`coordination/PINS.md` §8, installer
 handoff §8 Q6).
 
-Old build numbers are **not** pruned (`_7`'s `.xbps` and `.sig2` stay at the
-root; the index lists only the newest), matching the cosmic store's
-monotonic-growth behaviour. `_8` is a **metadata-only** rebuild of `_7`:
-the shipped `xbps-backend.so` is byte-identical (md5 `bb385531…`), while
-`short_desc` gained the ` (xbps backend)` marker so an installed box can be
-told apart from Void's stock flatpak-only build without comparing `pkgver`.
-Revision-numbering and rebase rules are documented in the template itself.
+Old build numbers are **not** pruned (`_7`'s and `_8`'s `.xbps` and `.sig2`
+stay at the root; the index lists only the newest), matching the cosmic
+store's monotonic-growth behaviour. `_8` is a **metadata-only** rebuild of
+`_7`: the shipped `xbps-backend.so` is byte-identical (md5 `bb385531…`),
+while `short_desc` gained the ` (xbps backend)` marker so an installed box
+can be told apart from Void's stock flatpak-only build without comparing
+`pkgver`. `_9` is a **policy-only** rebuild of `_8`: same plugin binary, and
+the `install`/`update` polkit actions now annotate
+`/usr/local/sbin/void-xbps-snap` — the wrapper that `/usr/bin/xbps-install`
+is symlinked to on an installer-provisioned box — instead of
+`/usr/bin/xbps-install`, which pkexec never matched after canonicalising the
+program path. Revision-numbering and rebase rules are documented in the
+template itself.
 
 ## Served repository layout
 
