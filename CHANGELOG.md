@@ -59,7 +59,48 @@ unsigned and every install aborted).
 
 ## Unreleased
 
-_Nothing yet — the newest served release is `stores-r2` below._
+_Nothing yet — the newest served release is `stores-r3` below._
+
+---
+
+## stores-r3 — 2026-11-01
+
+### `[POLKIT-SNAP-PATH]` — annotate the wrapper the installer actually ships
+
+`revision=8 → 9`. The `install` and `update` actions move their
+`org.freedesktop.policykit.exec.path` annotation from `/usr/bin/xbps-install`
+to `/usr/local/sbin/void-xbps-snap`. **Nothing else changes** — the action ids,
+every `exec.argv1` (`-y` / `-y` / `-Syu`), the `auth_admin` defaults, the
+backend sources and the template's build recipe are byte-identical to
+revision 8. The `remove` action deliberately keeps `/usr/bin/xbps-remove`: the
+installer's snapshot shadow only covers `xbps-install`, so `remove` already
+matched.
+
+**Why.** On every installer-provisioned box, `/usr/bin/xbps-install` and
+`/usr/sbin/xbps-install` are symlinks to the installer-owned
+`/usr/local/sbin/void-xbps-snap` (the snapper pre/post wrapper). pkexec
+canonicalises the program path (`realpath()`) *before* it looks up an action,
+so the old annotation could never match there: lookup fell through to pkexec's
+generic fallback and the user saw raw-argv wording ("Authentication is required
+to execute /usr/local/sbin/void-xbps-snap -y") instead of this store's own
+"Authentication is required to install software" message. Annotating the
+canonical path restores the store's own message.
+
+**Failure mode is graceful, by design.** On a stock Void box (no shadow) the
+canonicalised path is the real `/usr/bin/xbps-install`, never matches the
+wrapper annotation, and lookup falls back to the same generic prompt as before.
+A wrong-path annotation can only degrade the *wording*; it can never authorise
+anything different, because every action stays `auth_admin` and the wrapper
+passes its argv straight through.
+
+Artefacts: template `revision=9`; policy
+`org.kde.discover.xbps.policy`, sha256
+`434f5a8fbd80908abae64b0282b39af07cd8adbe6a467f4c80194214c3a3cb8a`;
+package `discover-6.7.5_9.x86_64.xbps`, 1643360 B, sha256
+`4b4683cf4cfe2ff5d08249b322bd6141628f0226a92316a78cc274116e278598`.
+The built plugin (`usr/lib/qt6/plugins/discover/xbps-backend.so`) is unchanged
+in behaviour — this is policy data only. The signing key is unchanged
+(DER sha256 `4e40218a…f17cf`).
 
 ---
 
