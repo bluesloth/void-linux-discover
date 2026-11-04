@@ -12,7 +12,8 @@ One repository per store: GNOME Software lives in
 | --- | --- |
 | `srcpkgs/discover/template` | the carried template (backend copy + CMake wiring in `post_extract()`, polkit policy in `post_install()`) |
 | `srcpkgs/discover/files/xbps/` | the xbps backend itself, carried as **source files** (a discover release bump does not invalidate diff context the way a unified patch would) |
-| `srcpkgs/discover/files/org.kde.discover.xbps.policy` | three `auth_admin` actions: `.install` / `.remove` / `.update` |
+| `srcpkgs/discover/files/org.kde.discover.xbps.policy` | the polkit actions: `.install` / `.remove` / `.update` `auth_admin`, `.refresh` `allow_active=yes` |
+| `srcpkgs/discover/files/discover-xbps-refresh` | the argless helper the `.refresh` action annotates (`xbps-install -S`) |
 | `tools/` | build / gate / publish tooling (identical copies in both store repos — edit them together) |
 | `CHANGELOG.md` | the decision + release record |
 | `PINS.md` | source-distfile checksums of the published packages |
@@ -24,8 +25,13 @@ One repository per store: GNOME Software lives in
 - **Never emit a bare `-Sy`/`-Syy`** as a pkexec argument: OctoXBPS ships a
   NOPASS polkit action keyed on `argv1=-Sy`. Install/remove use `-y`, the
   system update uses `-Syu`.
-- **Privilege** is pkexec + the dedicated `.policy`, every action
-  `auth_admin`. No NOPASS, no daemon.
+- **Privilege** is pkexec + the dedicated `.policy`: every action that performs
+  a **transaction** is `auth_admin`, and there is no NOPASS and no daemon. The
+  single exception is `.refresh` (`allow_active=yes`), which runs a
+  package-owned argless helper that only syncs the repository index — it can
+  install, remove and upgrade nothing, and forcing a password for it would make
+  Discover's routine update check prompt for no benefit. Do not extend that
+  exception to a `pkexec xbps-install` action.
 - **Repacks must be re-signed**: an unsigned repack of served repodata makes
   clients abort (2026-10-09 `void-cosmic-repo` incident).
 - The maintainer identity in every template is
@@ -52,21 +58,42 @@ Gates on `check-maintainer.sh`, signs packages + index, commits them into
 the repository root and tags `stores-rN`. `--dry-run` prints the plan.
 
 **Status: published** — <https://bluesloth.github.io/void-linux-discover/>
-serves **`discover-6.7.5_9`** as release `stores-r3` (2026-11-01); its
-predecessors `stores-r2` (2026-10-26) served `discover-6.7.5_8` and
-`stores-r1` (2026-10-22) served `discover-6.7.5_7`. The signing
-key is this store's own (DER sha256 `4e40218a…`); it lives off-repo and only
-its public fingerprint is pinned (`coordination/PINS.md` §8, installer
-handoff §8 Q6).
+serves **`discover-6.7.5_10`** as release `stores-r5` (2026-11-03); its
+predecessors `stores-r3` (2026-11-01) served `discover-6.7.5_9`, `stores-r2`
+(2026-10-26) served `discover-6.7.5_8` and `stores-r1` (2026-10-22) served
+`discover-6.7.5_7`. The signing key is this store's own (DER sha256
+`4e40218a…`); it lives off-repo and only its public fingerprint is pinned
+(`coordination/PINS.md` §8, installer handoff §8 Q6).
 
-Old build numbers are **not** pruned (`_7`'s and `_8`'s `.xbps` and `.sig2`
-stay at the root; the index lists only the newest), matching the cosmic
-store's monotonic-growth behaviour. `_8` is a **metadata-only** rebuild of
-`_7`: the shipped `xbps-backend.so` is byte-identical (md5 `bb385531…`),
-while `short_desc` gained the ` (xbps backend)` marker so an installed box
-can be told apart from Void's stock flatpak-only build without comparing
-`pkgver`. `_9` is a **policy-only** rebuild of `_8`: same plugin binary, and
-the `install`/`update` polkit actions now annotate
+`_10` is the **`[XBPS-REFRESH]`** release (`revision=10`). Discover's update
+list comes from `xbps-install -nSu`, which answers from the **cached**
+repodata — nothing on a stock Void box ever syncs it, so an update check could
+report a system as up to date indefinitely. `checkForUpdates()` now first runs
+`pkexec /usr/libexec/discover-xbps-refresh`, a package-owned argless helper
+behind a fourth polkit action (`allow_active=yes`), and the three transaction
+actions keep `auth_admin` with an annotated `argv1`. The helper path is
+annotated rather than `xbps-install -S` because pkexec matches only the first
+argument. The probe itself stays unprivileged and unchanged; only the sync is
+privileged, and it is asynchronous with a 120 s kill guard so the GUI never
+blocks.
+
+`stores-r4` (2026-11-03, commit `d37f092…`) published the **same** `_10`
+package and signed it correctly, but its index advertised `_9`:
+`tools/publish.sh` passed a lexically sorted list to `xbps-rindex -f -a`, and
+`discover-6.7.5_10` sorts before `_7`/`_8`/`_9` while `xbps-rindex -a` is
+last-wins per pkgname. `stores-r5` corrects the index and changes no package
+bytes; the tooling now resolves the newest build per pkgname with
+`xbps-uhelper cmpver` (mirrored byte-for-byte in the GNOME Software
+repository). Full analysis in `CHANGELOG.md`.
+
+Old build numbers are **not** pruned (`_7`–`_9`'s `.xbps` and `.sig2` stay at
+the root; the index lists only the newest), matching the cosmic store's
+monotonic-growth behaviour. `_8` is a **metadata-only** rebuild of `_7`: the
+shipped `xbps-backend.so` is byte-identical (md5 `bb385531…`), while
+`short_desc` gained the ` (xbps backend)` marker so an installed box can be
+told apart from Void's stock flatpak-only build without comparing `pkgver`.
+`_9` is a **policy-only** rebuild of `_8`: same plugin binary, and the
+`install`/`update` polkit actions now annotate
 `/usr/local/sbin/void-xbps-snap` — the wrapper that `/usr/bin/xbps-install`
 is symlinked to on an installer-provisioned box — instead of
 `/usr/bin/xbps-install`, which pkexec never matched after canonicalising the

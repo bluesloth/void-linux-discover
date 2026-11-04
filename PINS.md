@@ -18,23 +18,47 @@ is never committed — only the public fingerprint is pinned: in
 
 ## Served artifacts
 
-Latest release **`stores-r3`** (2026-11-01):
+Latest release **`stores-r5`** (2026-11-03):
 
 | artifact | value |
 | --- | --- |
-| served package | `discover-6.7.5_9.x86_64.xbps` (1643360 B, `sha256 4b4683cf…8598`) |
-| package signature | `discover-6.7.5_9.x86_64.xbps.sig2` (RSA over sha256 of the package) |
-| served index | `x86_64-repodata` (2309 B, `sha256 5bcb40e1…5f38`) |
+| served package | `discover-6.7.5_10.x86_64.xbps` (1649510 B, `sha256 2b44d31a…b09a`) |
+| package signature | `discover-6.7.5_10.x86_64.xbps.sig2` (RSA over sha256 of the package) |
+| served index | `x86_64-repodata` (2305 B, `sha256 75050cf1…0b17`) |
 | index identity | `signature-by = Void Linux Stores <noreply@github.com>` |
 | index URL | `https://bluesloth.github.io/void-linux-discover/x86_64-repodata` |
-| release tag | `stores-r3` = `890c125…` |
+| release tag | `stores-r5` = `c3fa0ff…` (commit `5fe8866…`) |
 
-`stores-r2` (2026-10-26, tag `59a100d…`) served `discover-6.7.5_8`
-(`sha256 1e12fed3…`, index `3682bff9…`); `stores-r1` (2026-10-22, tag
-`d2a027a…`) served `discover-6.7.5_7` (`sha256 26d2d646…`, index
-`e6c4631b…`). Their `.xbps` and `.sig2` remain at the repository root — build
-numbers are not pruned — but the index lists only the newest build, so `_7`
-and `_8` are history rather than current downloads.
+`stores-r4` (2026-11-03, commit `d37f092…`) published the same
+`discover-6.7.5_10` package and signed it correctly, but its index named
+`discover-6.7.5_9`: `tools/publish.sh` fed `xbps-rindex -f -a` a lexically
+sorted file list, and `_10` sorts before `_7`/`_8`/`_9` while
+`xbps-rindex -a` is last-wins. `stores-r5` is the correction — **no package
+bytes changed**, only the regenerated, re-signed index, which now advertises
+`_10`. The tooling fix (resolve the newest build per pkgname with
+`xbps-uhelper cmpver`) is in `tools/publish.sh` and mirrored byte-for-byte in
+the GNOME Software repository; see `CHANGELOG.md` for the full analysis.
+
+`stores-r3` (2026-11-01, tag `890c125…`) served `discover-6.7.5_9`
+(`sha256 4b4683cf…`, index `5bcb40e1…`); `stores-r2` (2026-10-26, tag
+`59a100d…`) served `discover-6.7.5_8` (`sha256 1e12fed3…`, index
+`3682bff9…`); `stores-r1` (2026-10-22, tag `d2a027a…`) served
+`discover-6.7.5_7` (`sha256 26d2d646…`, index `e6c4631b…`). Their `.xbps` and
+`.sig2` remain at the repository root — build numbers are not pruned — but the
+index lists only the newest build, so `_7`–`_9` are history rather than
+current downloads.
+
+`discover-6.7.5_10` is the **`[XBPS-REFRESH]` release** (template
+`revision=10`): `checkForUpdates()` now runs
+`pkexec /usr/libexec/discover-xbps-refresh` — a fourth polkit action,
+`allow_active=yes`, annotated on that package-owned argless helper — before
+the `xbps-install -nSu` probe, because the probe answers from the cached
+repodata and nothing on a stock Void box syncs it. The three transaction
+actions keep `auth_admin` and their `argv1` annotations unchanged from
+`revision=9`. The backend binary changes (plugin md5
+`2a8b1525…6130`), so the runtime matrix recorded for `_7`–`_9` does **not**
+carry over: the refresh path and the cold-start `pkexec` behaviour are
+unverified until a KDE box runs them.
 
 `discover-6.7.5_8` is a **metadata-only** rebuild of `_7`: the shipped
 `xbps-backend.so` is byte-identical (md5 `bb385531…`), so the runtime
