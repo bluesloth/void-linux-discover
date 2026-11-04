@@ -59,7 +59,94 @@ unsigned and every install aborted).
 
 ## Unreleased
 
-_Nothing yet — the newest served release is `stores-r3` below._
+_Nothing yet — the newest served release is `stores-r4` below._
+
+---
+
+## stores-r4 — 2026-11-03
+
+### `[XBPS-REFRESH]` — sync the repodata before an update check
+
+`revision=9 → 10`. Discover's update list comes from `xbps-install -nSu`,
+which is a **dry run**: it answers from the cached repodata and never syncs
+it. Nothing else on a stock Void box syncs it either (there is no xbps cron
+job), so until now the backend reported "up to date" forever while the
+mirrors moved on — the same defect the COSMIC store carried, fixed there in
+`epoch-1.11.0-r7` and here by the same shape.
+
+**What is new.**
+
+* `checkForUpdates()` no longer goes straight to the probe. It zeroes the
+  progress (Discover's "(Fetching…)", as before), then `beginUpdateCheck()`
+  spawns `pkexec /usr/libexec/discover-xbps-refresh` and calls `loadUpdates()`
+  only when that child has finished. One completion path, whatever happened:
+  an `errorOccurred(FailedToStart)`, a normal exit, a signal death and a
+  120 s guard kill all funnel through a single lambda, so the probe runs
+  exactly once and `m_refreshProcess` cannot leak.
+* `refreshUpdates()` is deliberately **untouched**: it also runs after every
+  finished transaction, and the one transaction that can change what is
+  available (`xbps-install -Syu`) has just synced the repositories itself, so
+  a second sync there would be pure noise.
+* A check already in flight makes a second `beginUpdateCheck()` a no-op
+  rather than a second spawn.
+* `pkexec` exit codes are named separately: **126** "authentication was
+  cancelled", **127** "pkexec could not run the helper", **75** (the helper's
+  `EX_TEMPFAIL` throttle) "the index was synced recently", signal "the helper
+  was killed". Anything else carries the helper's stderr tail into the log.
+* The refresh is **best effort throughout**: a refused authorisation, a
+  missing helper or an unreachable mirror leaves the cached index in place
+  and the update list still loads. An update list that never appears would be
+  a worse outcome than a stale one.
+
+**The helper** is `/usr/libexec/discover-xbps-refresh`, package-owned, mode
+755, `#!/bin/sh`, `set -u`. It takes **no arguments**, refuses to run unless
+uid 0 (so an accidental unprivileged run cannot report a sync that never
+happened — `xbps-install` as a normal user fails every reposync with EPERM
+*and still exits 0*), hardcodes a bare `xbps-install -S`, and throttles
+itself with a `/run` stamp (`EX_TEMPFAIL` = 75) so opening the Updates page
+repeatedly cannot hammer the mirrors. It mirrors the COSMIC store's
+`cosmic-store-refresh` byte-for-byte in behaviour.
+
+**The privilege model.** A fourth action, `org.kde.discover.xbps.refresh`, is
+`allow_active=yes` / `allow_any=no` / `allow_inactive=no` and is annotated on
+`org.freedesktop.policykit.exec.path=/usr/libexec/discover-xbps-refresh`. The
+three transaction actions keep `auth_admin` on every default and keep their
+`exec.argv1` annotations (`-y` / `-y` / `-Syu`) — **unchanged from revision
+9**. Annotating `argv1=-S` on `xbps-install` itself was rejected: pkexec
+matches only the *first* argument, so that grant would have let any active
+session run a full `pkexec xbps-install -S -y -- <packages>` with no password.
+The helper takes no arguments at all, so the grant cannot be widened into a
+transaction.
+
+A refresh prompt would have been a password box at every startup and every
+visit to the Updates page, which is why this one action is the exception; a
+refused refresh is harmless by construction.
+
+**Verified at build time** (this box runs COSMIC, so neither Discover nor its
+GUI exists here — the packaged bytes are what could be checked):
+
+* `discover-6.7.5_10.x86_64.xbps`, 1649510 B,
+  `sha256 2b44d31a…b09a`; `./xbps-src pkg` `EXIT=0`.
+* inside the package: `usr/libexec/discover-xbps-refresh` (4690 B, md5
+  `6f8b9d26…b2b8`), `usr/share/polkit-1/actions/org.kde.discover.xbps.policy`
+  (3876 B, **exactly 4 actions**, three `auth_admin` + one `allow_active`),
+  `usr/lib/qt6/plugins/discover/xbps-backend.so` (134288 B, md5
+  `2a8b1525…6130`).
+* `strings -e l` on the plugin — Qt's `QStringLiteral`s are **UTF-16LE**, so
+  plain `strings` reports zero hits — shows
+  `/usr/libexec/discover-xbps-refresh` and all seven
+  `xbps-backend: repodata …` messages, i.e. the refresh path really is
+  compiled into the shipped binary.
+* `sh -n` clean on the helper; the policy parses as XML and carries no `--`
+  inside any comment (an XML comment may not contain a double hyphen, and one
+  silently breaks policy loading).
+* `xbps-backend: repodata …` — the harness expectation that a cold start
+  spawns zero `pkexec` calls changes with this release: `checkForUpdates()`
+  runs once at construction, so a cold start now legitimately spawns exactly
+  one `pkexec /usr/libexec/discover-xbps-refresh`.
+
+**Not verified here** (needs a KDE box, owed): the polkit dialog for the
+three transaction actions, and the refresh path end to end at runtime.
 
 ---
 

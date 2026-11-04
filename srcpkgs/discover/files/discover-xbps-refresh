@@ -1,0 +1,109 @@
+#!/bin/sh
+# discover-xbps-refresh -- sync the xbps repodata so Discover can see updates.
+#
+# Why this exists: Discover asks its backend to check for updates (at startup
+# and whenever the Updates page is opened or refreshed), but the xbps update
+# list comes from `xbps-install -nSu`, which is a DRY RUN -- it answers from
+# the CACHED repodata and never syncs it. Nothing else on a stock Void box
+# syncs either: there is no xbps cron job, and `xbps-query -S` (which the
+# backend otherwise uses) is `--show`, a package lookup, not a sync. So
+# without this helper the backend reports "up to date" indefinitely while the
+# mirrors move on -- the same defect that hid three real updates from the
+# COSMIC store until revision 11 of that backend.
+#
+# Run as root through pkexec:
+#   org.kde.discover.xbps.refresh
+# which is allow_active=yes. That is deliberate, and it is only safe because
+# this script takes NO arguments and can only ever run `xbps-install -S`: the
+# action is annotated on exactly this path, so a caller that passes extra
+# arguments cannot smuggle a transaction through it. Annotating argv1="-S" on
+# xbps-install itself would have been a hole: pkexec matches only the FIRST
+# argument, so `pkexec xbps-install -S -y -- <package>` would have run a full
+# transaction from any active session with no password at all.
+#
+# Two more deliberate choices:
+#
+#  * The real binary is used directly. On an installer-provisioned box
+#    /usr/bin/xbps-install is a symlink to /usr/local/sbin/void-xbps-snap,
+#    whose _should_snap() matches a bare -S, so a sync through the wrapper
+#    would take a snapper snapshot pair on every update check. The `.real`
+#    companion the installer leaves behind is the unshadowed binary.
+#
+#  * Refreshes are throttled. Discover re-checks when its Updates page is
+#    opened, so an unthrottled helper would re-sync on every click. The stamp
+#    lives on /run, so it also resets on reboot.
+#
+# Exit status:
+#   0   the repos were synced
+#   75  skipped, a sync happened within the throttle window (EX_TEMPFAIL)
+#   *   the sync failed; the caller keeps whatever repodata it already has
+#
+# The caller never treats a non-zero status as fatal (a refused authorisation
+# or an unreachable mirror must not empty Discover's update list), but it does
+# distinguish 75 from a real failure so the log does not claim a sync that
+# did not happen.
+
+set -u
+
+INTERVAL=600
+STAMP=/run/discover-xbps-refresh.stamp
+
+# Only ever useful as root, and this script is meant to be reached exclusively
+# through pkexec. Refusing here makes an accidental unprivileged invocation
+# obvious instead of silent: unprivileged, xbps writes the repository list but
+# fails every reposync with EPERM and STILL exits 0, so the caller would be
+# told the index was refreshed when nothing was fetched.
+if [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ]; then
+	echo "discover-xbps-refresh: must run as root (through pkexec)" >&2
+	exit 1
+fi
+
+if [ -r "$STAMP" ]; then
+	_now=$(date +%s 2>/dev/null || echo 0)
+	_last=$(cat "$STAMP" 2>/dev/null || echo 0)
+	case "$_last" in
+	'' | *[!0-9]*) _last=0 ;;
+	esac
+	if [ "$_now" -gt 0 ] && [ $((_now - _last)) -lt "$INTERVAL" ]; then
+		# 75 = EX_TEMPFAIL: "nothing to do, try later". Distinct from 0 so
+		# the caller can say "skipped" instead of "refreshed".
+		exit 75
+	fi
+fi
+
+# Resolve the unshadowed xbps-install. Anything that canonicalises to the
+# snapper wrapper is skipped; the PATH lookup is the stock-Void fallback.
+_xbps=""
+for _cand in /usr/bin/xbps-install.real /usr/bin/xbps-install /usr/sbin/xbps-install; do
+	[ -x "$_cand" ] || continue
+	case "$(readlink -f "$_cand" 2>/dev/null || printf '%s' "$_cand")" in
+	*/void-xbps-snap) continue ;;
+	esac
+	_xbps="$_cand"
+	break
+done
+if [ -z "$_xbps" ]; then
+	_xbps=$(command -v xbps-install 2>/dev/null || true)
+fi
+if [ -z "$_xbps" ]; then
+	echo "discover-xbps-refresh: no usable xbps-install binary" >&2
+	exit 1
+fi
+
+# -S only, never -Syu: fetching the index must not begin an upgrade. stdin is
+# /dev/null, so a repository-key import question (which only appears for a
+# repository nobody has trusted yet) reads EOF and declines -- silently
+# importing a key would be the wrong thing to do from a background check.
+"$_xbps" -S </dev/null
+_rc=$?
+
+# Note: xbps exits 0 even when individual reposync steps fail (it treats a
+# per-repository fetch error as non-fatal), so this stamp records "we tried"
+# rather than "everything is current". That is the right behaviour for a
+# throttle -- a dead mirror should not be re-hit on every check -- and the
+# caller only ever uses the index that is actually on disk.
+if [ "$_rc" -eq 0 ]; then
+	date +%s >"$STAMP" 2>/dev/null || true
+fi
+
+exit "$_rc"

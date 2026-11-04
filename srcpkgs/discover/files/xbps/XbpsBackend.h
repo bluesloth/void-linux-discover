@@ -15,6 +15,7 @@
 
 class XbpsResource;
 class XbpsUpdater;
+class QProcess;
 
 /**
  * Native xbps backend for Discover.
@@ -26,6 +27,9 @@ class XbpsUpdater;
  *  - installed packages:  xbps-query -l
  *  - repositories:        xbps-query -L
  *  - pending updates:     xbps-install -nSu
+ *  - index refresh:       pkexec /usr/libexec/discover-xbps-refresh
+ *                         (which runs only `xbps-install -S`; the dry run
+ *                         above never syncs the repodata by itself)
  *  - privileged work:     pkexec xbps-install / pkexec xbps-remove
  */
 class XbpsBackend : public AbstractResourcesBackend
@@ -79,6 +83,15 @@ public Q_SLOTS:
 private:
     void loadInstalled();
     void loadUpdates();
+    /**
+     * Syncs the repodata through pkexec and then probes for updates.
+     *
+     * The sync is what makes the probe meaningful (see
+     * /usr/libexec/discover-xbps-refresh), and it runs as a child process
+     * rather than inline because a repository sync takes seconds and must not
+     * block the GUI thread.
+     */
+    void beginUpdateCheck();
 
     QHash<QString, XbpsResource *> m_resources;
     /**
@@ -91,6 +104,8 @@ private:
     QList<AbstractResource *> m_upgradeableResources;
     XbpsUpdater *m_updater = nullptr;
     QTimer *m_updatesTimer = nullptr;
+    /** The in-flight repodata refresh, or nullptr when none is running. */
+    QProcess *m_refreshProcess = nullptr;
     int m_fetchProgress = 0;
 };
 

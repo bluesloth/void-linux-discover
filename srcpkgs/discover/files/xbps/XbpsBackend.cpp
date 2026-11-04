@@ -142,7 +142,7 @@ XbpsBackend::XbpsBackend(QObject *parent)
     });
 
     m_updatesTimer->setSingleShot(true);
-    connect(m_updatesTimer, &QTimer::timeout, this, &XbpsBackend::refreshUpdates);
+    connect(m_updatesTimer, &QTimer::timeout, this, &XbpsBackend::beginUpdateCheck);
 
     SourcesModel::global()->addSourcesBackend(new XbpsSourcesBackend(this));
 
@@ -181,6 +181,103 @@ void XbpsBackend::refreshInstalled()
 void XbpsBackend::refreshUpdates()
 {
     loadUpdates();
+}
+
+void XbpsBackend::beginUpdateCheck()
+{
+    // Discover's update check is the only path that syncs the index.
+    // refreshUpdates() deliberately does not: it also runs after every
+    // finished transaction, and the one transaction that can change what is
+    // available (`xbps-install -Syu`) has just synced the repositories
+    // itself, so a second sync there would be pure noise.
+    if (m_refreshProcess) {
+        // A check is already in flight. Its completion drives the progress to
+        // 100 and refreshes the list, so there is nothing to do here.
+        return;
+    }
+
+    auto *process = new QProcess(this);
+    m_refreshProcess = process;
+    process->setProgram(QStringLiteral("pkexec"));
+    process->setArguments({QStringLiteral("/usr/libexec/discover-xbps-refresh")});
+    // The helper must never receive an answer to anything it asks: a
+    // repository key import question has to read EOF and decline, exactly as
+    // it does when the helper is run on its own.
+    process->setStandardInputFile(QProcess::nullDevice());
+    process->setProcessChannelMode(QProcess::SeparateChannels);
+
+    // One completion path, whatever happened: the probe below must run
+    // exactly once, because a second one would double the update list's
+    // rebuild and re-emit contentsChanged() for no reason. The refresh is
+    // best effort throughout: a refused authorisation, a missing helper or
+    // an unreachable mirror all just leave the cached index in place, which
+    // is a far better outcome than an update list that never loads.
+    const auto finish = [this](const QString &logLine, bool isWarning) {
+        if (!m_refreshProcess) {
+            return;
+        }
+        m_refreshProcess->deleteLater();
+        m_refreshProcess = nullptr;
+        if (!logLine.isEmpty()) {
+            if (isWarning) {
+                qWarning().noquote() << logLine;
+            } else {
+                qInfo().noquote() << logLine;
+            }
+        }
+        loadUpdates();
+    };
+
+    // QProcess does not emit finished() when the process never started.
+    connect(process, &QProcess::errorOccurred, this, [process, finish](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart) {
+            return;
+        }
+        finish(QStringLiteral("xbps-backend: repodata not refreshed: %1").arg(process->errorString()), true);
+    });
+
+    connect(process,
+            qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            this,
+            [process, finish](int exitCode, QProcess::ExitStatus exitStatus) {
+                if (exitStatus != QProcess::NormalExit) {
+                    finish(QStringLiteral("xbps-backend: repodata not refreshed, the helper was killed"), true);
+                    return;
+                }
+                switch (exitCode) {
+                case 0:
+                    finish(QStringLiteral("xbps-backend: repodata refreshed"), false);
+                    break;
+                case 75:
+                    // The helper's throttle (EX_TEMPFAIL): the index was
+                    // synced recently, so there was nothing to do.
+                    finish(QStringLiteral("xbps-backend: repodata refresh skipped, the index was synced recently"), false);
+                    break;
+                case 126:
+                    finish(QStringLiteral("xbps-backend: repodata not refreshed, authentication was cancelled"), true);
+                    break;
+                case 127:
+                    finish(QStringLiteral("xbps-backend: repodata not refreshed, pkexec could not run the helper"), true);
+                    break;
+                default: {
+                    const QString stderr = QString::fromUtf8(process->readAllStandardError()).trimmed();
+                    finish(QStringLiteral("xbps-backend: repodata not refreshed (helper exit %1)%2")
+                               .arg(QString::number(exitCode), stderr.isEmpty() ? QString() : QStringLiteral(": ") + stderr),
+                           true);
+                    break;
+                }
+                }
+            });
+
+    // A polkit request that never resolves must not leave the update list
+    // parked on "(Fetching...)" for the lifetime of the window.
+    QTimer::singleShot(120000, process, [process]() {
+        if (process->state() != QProcess::NotRunning) {
+            process->kill();
+        }
+    });
+
+    process->start();
 }
 
 void XbpsBackend::loadInstalled()
@@ -267,10 +364,12 @@ void XbpsBackend::loadUpdates()
     // "xbps-install -nSu" is a dry run of a system update: it lists every
     // package that has a pending update without touching the system.
     //
-    // A regular user cannot refresh the repository metadata (that lives in
-    // /var/db/xbps), so the list is based on the metadata that is already
-    // there. The privileged transaction of the updater syncs the
-    // repositories before it upgrades anything.
+    // A dry run answers from the repodata that is already on disk, and it
+    // does NOT sync it. That is why checkForUpdates() syncs first, through
+    // pkexec and /usr/libexec/discover-xbps-refresh: without that the update
+    // list is built from whatever metadata happened to be cached, and nothing
+    // else on a stock Void box refreshes it (there is no xbps cron job), so
+    // Discover reported "up to date" indefinitely while the mirrors moved on.
     const QByteArray output = runAndCapture(QStringLiteral("xbps-install"), {QStringLiteral("-nSu")});
 
     QList<AbstractResource *> upgradeable;
@@ -430,6 +529,10 @@ int XbpsBackend::fetchingUpdatesProgress() const
 
 void XbpsBackend::checkForUpdates()
 {
+    // The whole check is: sync the index (beginUpdateCheck), then probe
+    // (loadUpdates). Progress stays at 0 for the duration, which is what
+    // Discover renders as "(Fetching...)", and loadUpdates drives it to 100
+    // once the probe is done.
     m_fetchProgress = 0;
     Q_EMIT fetchingUpdatesProgressChanged();
     m_updatesTimer->start(0);

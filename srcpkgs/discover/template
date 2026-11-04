@@ -1,7 +1,7 @@
 # Template file for 'discover'
 pkgname=discover
 version=6.7.5
-revision=9
+revision=10
 archs="x86_64*"
 #
 # DOWNSTREAM DELTA — xbps backend.  This template is Void's discover plus
@@ -53,7 +53,15 @@ post_extract() {
 
 # The polkit actions of the backend are not part of the upstream source tree,
 # so they are installed separately after the regular installation.
+#
+# discover-xbps-refresh is the root helper behind the fourth (allow_active)
+# action: the backend shells out to it through pkexec before an update check,
+# because `xbps-install -nSu` reads the cached repodata and never syncs it.
+# It takes no arguments and can only run a bare `xbps-install -S`; see the
+# .policy header for why that grant is narrow.
 post_install() {
 	install -Dm644 ${FILESDIR}/org.kde.discover.xbps.policy \
 		${DESTDIR}/usr/share/polkit-1/actions/org.kde.discover.xbps.policy
+	install -Dm755 ${FILESDIR}/discover-xbps-refresh \
+		${DESTDIR}/usr/libexec/discover-xbps-refresh
 }

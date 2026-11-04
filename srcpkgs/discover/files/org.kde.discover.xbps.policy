@@ -1,5 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop.org//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<!--
+  exec.path is the path pkexec CANONICALISES before it looks up an action
+  (pkexec calls realpath()), not the path the backend spawns. On every
+  installer-provisioned Void box /usr/bin/xbps-install is a symlink to
+  /usr/local/sbin/void-xbps-snap (the snapper pre/post wrapper), so the
+  install and update actions annotate the wrapper. remove keeps
+  /usr/bin/xbps-remove: the wrapper shadows xbps-install only.
+
+  The fourth action, refresh, is deliberately NOT auth_admin. Discover's
+  update list comes from `xbps-install -nSu`, a dry run that answers from the
+  cached repodata, so the backend must sync that index before it can see
+  updates. A password prompt on a check that runs at startup and again every
+  time the Updates page is opened would make the feature unusable, so this one
+  is allow_active=yes. Two things keep that grant narrow:
+    * it is annotated on /usr/libexec/discover-xbps-refresh, a package-owned
+      helper that takes no arguments and hardcodes a bare `xbps-install -S`.
+      It cannot install, remove or upgrade anything. Annotating argv1=-S on
+      xbps-install itself would have been a hole: pkexec matches only the
+      first argument, so a caller could have run a full transaction from an
+      active session with no password.
+    * allow_any and allow_inactive are `no`, so a locked or non-active
+      session cannot trigger it. A refused refresh is harmless: the backend
+      keeps whatever repodata it already has.
+-->
 <policyconfig>
   <vendor>KDE Discover</vendor>
   <vendor_url>https://apps.kde.org/discover</vendor_url>
@@ -36,5 +60,15 @@
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/local/sbin/void-xbps-snap</annotate>
     <annotate key="org.freedesktop.policykit.exec.argv1">-Syu</annotate>
+  </action>
+  <action id="org.kde.discover.xbps.refresh">
+    <description>Refresh the package index with Discover</description>
+    <message>Authentication is required to refresh the software index</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/discover-xbps-refresh</annotate>
   </action>
 </policyconfig>
