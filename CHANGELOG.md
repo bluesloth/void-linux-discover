@@ -59,7 +59,46 @@ unsigned and every install aborted).
 
 ## Unreleased
 
-_Nothing yet — the newest served release is `stores-r4` below._
+_Nothing yet — the newest served release is `stores-r5` below._
+
+---
+
+## stores-r5 — 2026-11-03
+
+### `[PUBLISH-INDEX-ORDER]` — correct the index `stores-r4` shipped
+
+`stores-r4` (`d37f092`) shipped `discover-6.7.5_10` and signed it correctly —
+`openssl dgst -sha256 -verify` against the store's published key says
+`Verified OK` — but its `x86_64-repodata` advertised **`discover-6.7.5_9`**.
+The package was right and the index was wrong, so a client pointed at this
+repository would have been offered `_9`, i.e. the build without the refresh
+fix.
+
+**Cause.** `tools/publish.sh` built `xbps-rindex -f -a`'s argument list with
+`find … | sort`, which is lexicographic: `discover-6.7.5_10` sorts **before**
+`discover-6.7.5_7/_8/_9`. `xbps-rindex -a` is last-wins for a given pkgname
+and `-f` overwrites unconditionally, so `_10` was added first and `_9` last,
+and the index ended up naming `_9`. Reproduced in a scratch directory: `_10`
+alone indexes as `_10`; adding `_9` afterwards with `-f` flips it back. The
+packages themselves were never in doubt — `xbps-uhelper cmpver discover-6.7.5_10 discover-6.7.5_9` returns `rc=1`, so `_10` is the newer build.
+Single-digit revisions had always happened to sort in build order, which is
+why every release before this one was correct and the trap only appeared once
+a revision reached `_10`.
+
+**Fix.** `tools/publish.sh` now resolves the index list per package name: for
+each pkgname it compares every staged build with `xbps-uhelper cmpver` and
+adds **only the newest** to `xbps-rindex -f -a`, printing a note when that
+differs from what the lexical order would have picked (here:
+`index: discover -> discover-6.7.5_10.x86_64.xbps (lexical order would have picked discover-6.7.5_9.x86_64.xbps)`).
+The index is keyed by pkgname and has always advertised exactly one build per
+name, so this changes no convention — superseded files are still copied to the
+repository root and stay out of the index, as before. The same block is copied
+byte-for-byte from the COSMIC repository's `tools/publish.sh`, which has
+carried this fix since the `cosmic-store` `_10` build.
+
+**This release contains no package change.** `discover-6.7.5_10` is the same
+1649510 B, `sha256 2b44d31a…b09a` file `stores-r4` served; only
+`x86_64-repodata` is regenerated and re-signed (it now advertises `_10`).
 
 ---
 
