@@ -75,7 +75,18 @@ actions keep `auth_admin` with an annotated `argv1`. The helper path is
 annotated rather than `xbps-install -S` because pkexec matches only the first
 argument. The probe itself stays unprivileged and unchanged; only the sync is
 privileged, and it is asynchronous with a 120 s kill guard so the GUI never
-blocks.
+blocks. The helper takes no arguments and can only ever run `xbps-install -S`
+(never `-Syu`, never `-y`, stdin on `/dev/null` so a key-import question
+declines): annotating `argv1="-S"` on `xbps-install` itself would have been a
+hole, because pkexec matches only the first argument and
+`pkexec xbps-install -S -y -- <pkg>` would then have run a full transaction
+with no password. It resolves `/usr/bin/xbps-install.real` so a sync does not
+take a snapper snapshot pair through the `void-xbps-snap` shadow, and throttles
+itself to one sync per 600 s with a `/run` stamp, exiting **75**
+(`EX_TEMPFAIL`) when it skips. The backend treats any non-zero status as
+non-fatal — a refused authorisation or an unreachable mirror must not empty the
+update list — but it distinguishes 75 from a real failure so the log never
+claims a sync that did not happen.
 
 `stores-r4` (2026-11-03, commit `d37f092…`) published the **same** `_10`
 package and signed it correctly, but its index advertised `_9`:
