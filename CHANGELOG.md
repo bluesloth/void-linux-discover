@@ -61,9 +61,9 @@ unsigned and every install aborted).
 
 Served set: `discover-6.7.5_12.x86_64.xbps` (1657753 B,
 `sha256 97e88981…b20b`), its `.sig2`, and the re-signed `x86_64-repodata`
-advertising `discover-6.7.5_12`. Release tag `stores-r7` on the publish
-commit. Superseded builds `_7`–`_11` remain at the repository root but are no
-longer named by the index.
+(2310 B, `sha256 7b0d0c6f…44a79`) advertising `discover-6.7.5_12`.
+Release tag `stores-r7` = `f5180e6c…` on commit `ebb7b9b…`. Superseded builds
+`_7`–`_11` remain at the repository root but are no longer named by the index.
 
 ### `[XBPS-NOTIFIER]` — pending xbps updates reach the tray
 

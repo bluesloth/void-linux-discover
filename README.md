@@ -58,10 +58,11 @@ Gates on `check-maintainer.sh`, signs packages + index, commits them into
 the repository root and tags `stores-rN`. `--dry-run` prints the plan.
 
 **Status: published** — <https://bluesloth.github.io/void-linux-discover/>
-serves **`discover-6.7.5_10`** as release `stores-r5` (2026-11-03); its
-predecessors `stores-r3` (2026-11-01) served `discover-6.7.5_9`, `stores-r2`
-(2026-10-26) served `discover-6.7.5_8` and `stores-r1` (2026-10-22) served
-`discover-6.7.5_7`. The signing key is this store's own (DER sha256
+serves **`discover-6.7.5_12`** as release `stores-r7` (2026-11-06); its
+predecessors `stores-r6` (2026-11-06) served `_11`, `stores-r5` (2026-11-03)
+served `discover-6.7.5_10`, `stores-r3` (2026-11-01) served `discover-6.7.5_9`,
+`stores-r2` (2026-10-26) served `discover-6.7.5_8` and `stores-r1` (2026-10-22)
+served `discover-6.7.5_7`. The signing key is this store's own (DER sha256
 `4e40218a…`); it lives off-repo and only its public fingerprint is pinned
 (`coordination/PINS.md` §8, installer handoff §8 Q6).
 
