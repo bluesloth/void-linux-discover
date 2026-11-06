@@ -58,6 +58,14 @@ public:
     {
         return m_size;
     }
+    // Discover's application page renders a BusyIndicator while
+    // "sizeDescription" is non-empty but "appSize" is not visible, and
+    // "appSize" only becomes visible once "size" is non-zero (see
+    // ApplicationPageFullComponent.qml). The inherited implementation formats
+    // an unknown size as "0 B", which is never empty, so a package whose size
+    // we have not resolved would spin forever. An empty string means "we do
+    // not know yet, and no progress is pending".
+    QString sizeDescription() override;
     QUrl homepage() override
     {
         return {};
@@ -148,7 +156,11 @@ public:
     }
     void setSize(quint64 size)
     {
+        if (m_size == size) {
+            return;
+        }
         m_size = size;
+        Q_EMIT sizeChanged();
     }
     void setReleaseDate(const QDate &date)
     {

@@ -59,7 +59,42 @@ unsigned and every install aborted).
 
 ## Unreleased
 
-_Nothing yet — the newest served release is `stores-r5` below._
+### `[XBPS-SIZE]` — report real package sizes, and stop the "0 B" spinner
+
+Discover showed a perpetually spinning indicator where an application's size
+belongs — during and after an install — and Installed-page tiles read `0 B`.
+Two independent faults stacked up:
+
+1. **The backend never set a size except for updates.** `XbpsBackend` called
+   `setSize()` only inside `loadUpdates()`, from the download-bytes column of
+   `xbps-install -nSu`; `loadInstalled()` and `search()` left `m_size` at its
+   0 default. There is no `fetchDetails()` override either, so nothing could
+   fill it in later.
+2. **Discover treats "size 0 with a description" as "still resolving".**
+   `ApplicationPageFullComponent.qml` shows
+   `BusyIndicator { visible: !appSize.visible && sizeDescription.length > 0 }`
+   and only shows `appSize` when `application.size != 0`, while the inherited
+   `AbstractResource::sizeDescription()` formats an unknown size as `"0 B"` —
+   never an empty string. So the spinner ran forever on top of a bogus
+   `0 B`.
+
+Fixed in the carried backend (`srcpkgs/discover/files/xbps/`):
+
+- `readInstalledSizes()` reads `/var/db/xbps/pkgdb-*.plist` once and returns
+  `pkgname → installed_size` in raw bytes. One file read beats ~800
+  `xbps-query` forks, and it is the only way to get exact numbers: the CLI
+  prints human-readable sizes only and has no batch property form.
+- `loadInstalled()` applies that size to every installed package when it is
+  marked installed, and resets a package to size 0 when it is no longer in
+  `xbps-query -l`. `loadUpdates()` still overrides with the download size for
+  upgradeable packages, because it runs afterwards.
+- `XbpsResource::sizeDescription()` now returns an empty `QString` when the
+  size is unknown instead of `"0 B"`, which hides both the label and the
+  spinner. `setSize()` also emits `sizeChanged()` on change (and returns
+  early when nothing changed), so a size arriving late re-renders the QML
+  bindings.
+
+Template `revision=10` → `11`.
 
 ---
 

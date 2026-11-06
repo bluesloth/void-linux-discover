@@ -17,8 +17,11 @@
 #include <KLocalizedString>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
 #include <QProcess>
 #include <QTimer>
+#include <QXmlStreamReader>
 
 DISCOVER_BACKEND_PLUGIN(XbpsBackend)
 
@@ -125,6 +128,75 @@ QByteArray runAndCapture(const QString &program, const QStringList &arguments)
         return {};
     }
     return process.readAllStandardOutput();
+}
+
+/**
+ * Reads the installed size (in bytes) of every installed package out of the
+ * local xbps package database.
+ *
+ * The database is an XML plist at /var/db/xbps/pkgdb-<version>.plist whose
+ * root <dict> maps each package name to a <dict> of its properties, with
+ * "installed_size" an <integer> in raw bytes. Reading it once is far cheaper
+ * than forking "xbps-query -p installed_size" for every installed package
+ * (there are hundreds), and xbps-query only prints a human-readable size
+ * ("48MB"), never the raw value.
+ *
+ * Returns an empty hash when the database is missing or unreadable: sizes are
+ * cosmetic, and the UI degrades to "no size shown" rather than failing.
+ */
+QHash<QString, quint64> readInstalledSizes()
+{
+    QHash<QString, quint64> sizes;
+
+    const QDir dir(QStringLiteral("/var/db/xbps"));
+    const QStringList databases = dir.entryList({QStringLiteral("pkgdb-*.plist")}, QDir::Files, QDir::Name);
+    if (databases.isEmpty()) {
+        return sizes;
+    }
+
+    QFile file(dir.filePath(databases.last()));
+    if (!file.open(QIODevice::ReadOnly)) {
+        return sizes;
+    }
+
+    QXmlStreamReader xml(&file);
+
+    // Depth of the <dict> elements: 1 is the top-level package map, 2 is a
+    // package's own property dict (3+ would be a nested value we do not need).
+    int dictDepth = 0;
+    QString currentPackage;
+    bool expectInstalledSize = false;
+
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isStartElement()) {
+            const auto element = xml.name();
+            if (element == QLatin1String("dict")) {
+                ++dictDepth;
+            } else if (element == QLatin1String("key")) {
+                const QString key = xml.readElementText();
+                if (dictDepth == 1) {
+                    currentPackage = key;
+                } else if (dictDepth == 2 && key == QLatin1String("installed_size")) {
+                    expectInstalledSize = true;
+                }
+            } else if (element == QLatin1String("integer") && expectInstalledSize && dictDepth == 2) {
+                const quint64 value = xml.readElementText().toULongLong();
+                if (!currentPackage.isEmpty() && value > 0) {
+                    sizes.insert(currentPackage, value);
+                }
+                expectInstalledSize = false;
+            }
+        } else if (xml.isEndElement() && xml.name() == QLatin1String("dict")) {
+            if (dictDepth == 2) {
+                currentPackage.clear();
+                expectInstalledSize = false;
+            }
+            --dictDepth;
+        }
+    }
+
+    return sizes;
 }
 }
 
@@ -287,6 +359,12 @@ void XbpsBackend::loadInstalled()
         return;
     }
 
+    // "xbps-query -l" only prints human-readable sizes and offers no batch
+    // property form, so one read of the package database is both cheaper and
+    // more precise than 800+ forks. Without a size Discover animates its
+    // "unknown size" spinner forever on the application page.
+    const QHash<QString, quint64> sizes = readInstalledSizes();
+
     QHash<QString, XbpsResource *> found;
 
     for (const QByteArray &line : output.split('\n')) {
@@ -323,6 +401,10 @@ void XbpsBackend::loadInstalled()
             addResource(res);
         }
         res->setInstalledVersion(version);
+        const auto size = sizes.constFind(name);
+        if (size != sizes.constEnd()) {
+            res->setSize(*size);
+        }
         if (res->summary().isEmpty()) {
             // The description is everything after the pkgver column.
             const int descStart = line.indexOf(fields.at(1)) + fields.at(1).size();
@@ -349,6 +431,7 @@ void XbpsBackend::loadInstalled()
         }
         res->setInstalledVersion(QString());
         res->setState(AbstractResource::None);
+        res->setSize(0);
     }
 
     m_installedPackages.clear();
