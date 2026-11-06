@@ -57,7 +57,13 @@ makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
 in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
-## Unreleased
+## stores-r6 — 2026-11-06
+
+Served set: `discover-6.7.5_11.x86_64.xbps` (1650382 B,
+`sha256 6bf09d48…2918`), its `.sig2`, and the re-signed `x86_64-repodata`
+(2309 B, `sha256 5dafb919…96e8`) advertising `discover-6.7.5_11`.
+Release tag `stores-r6` = `44294b9…` on commit `7507d91…`. Superseded builds
+`_7`–`_10` remain at the repository root but are no longer named by the index.
 
 ### `[XBPS-SIZE]` — report real package sizes, and stop the "0 B" spinner
 

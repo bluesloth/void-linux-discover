@@ -18,16 +18,19 @@ is never committed — only the public fingerprint is pinned: in
 
 ## Served artifacts
 
-Latest release **`stores-r5`** (2026-11-03):
+Latest release **`stores-r6`** (2026-11-06):
 
 | artifact | value |
 | --- | --- |
-| served package | `discover-6.7.5_10.x86_64.xbps` (1649510 B, `sha256 2b44d31a…b09a`) |
-| package signature | `discover-6.7.5_10.x86_64.xbps.sig2` (RSA over sha256 of the package) |
-| served index | `x86_64-repodata` (2305 B, `sha256 75050cf1…0b17`) |
+| served package | `discover-6.7.5_11.x86_64.xbps` (1650382 B, `sha256 6bf09d48…2918`) |
+| package signature | `discover-6.7.5_11.x86_64.xbps.sig2` (RSA over sha256 of the package) |
+| served index | `x86_64-repodata` (2309 B, `sha256 5dafb919…96e8`), advertising `discover-6.7.5_11` |
 | index identity | `signature-by = Void Linux Stores <noreply@github.com>` |
 | index URL | `https://bluesloth.github.io/void-linux-discover/x86_64-repodata` |
-| release tag | `stores-r5` = `c3fa0ff…` (commit `5fe8866…`) |
+| release tag | `stores-r6` = `44294b9…` (commit `7507d91…`) |
+
+`stores-r5` (2026-11-03, tag `c3fa0ff…`, commit `5fe8866…`) served
+`discover-6.7.5_10` (`sha256 2b44d31a…b09a`, index `75050cf1…0b17`).
 
 `stores-r4` (2026-11-03, commit `d37f092…`) published the same
 `discover-6.7.5_10` package and signed it correctly, but its index named
