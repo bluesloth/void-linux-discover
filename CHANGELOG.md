@@ -57,6 +57,80 @@ makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
 in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
+## stores-r7 — 2026-11-06
+
+Served set: `discover-6.7.5_12.x86_64.xbps` (1657753 B,
+`sha256 97e88981…b20b`), its `.sig2`, and the re-signed `x86_64-repodata`
+advertising `discover-6.7.5_12`. Release tag `stores-r7` on the publish
+commit. Superseded builds `_7`–`_11` remain at the repository root but are no
+longer named by the index.
+
+### `[XBPS-NOTIFIER]` — pending xbps updates reach the tray
+
+OctoXBPS has a notifier that tells you updates are waiting; Discover on this
+repository did not. The gap was **not** in the backend: Discover's tray icon,
+its "Updates available" notification and its "View Updates" action do not come
+from a `AbstractResourcesBackend` at all. They come from a separate process,
+`DiscoverNotifier`, which loads plugins out of
+`/usr/lib/qt6/plugins/discover-notifier/` whose IID matches
+`DISCOVER_NOTIFIER_IID` (`org.kde.discover.6.7.5.BackendNotifierModule`).
+Upstream ships exactly one such plugin, `FlatpakNotifier.so`, and Void builds
+Discover with the notifier on (`-DWITH_NOTIFIER=ON`, upstream default), so a
+stock install had a working tray path that could only ever see Flatpaks. A
+Void box with pending xbps updates showed nothing.
+
+A second notifier module closes that gap, carried beside the backend in
+`srcpkgs/discover/files/xbps/` and installed into the notifier plugin
+namespace rather than the backend one:
+
+- `XbpsNotifier.h` — a `BackendNotifierModule` subclass with the interface's
+  pure virtuals: `recheckSystemUpdateNeeded()`, `hasUpdates()`,
+  `hasSecurityUpdates()`, `needsReboot()`.
+- `XbpsNotifier.cpp` — the probe and the schedule (below).
+- `XbpsNotifier` target in `files/xbps/CMakeLists.txt` via
+  `kcoreaddons_add_plugin(... INSTALL_NAMESPACE "discover-notifier")`, linking
+  `Discover::Notifiers Qt::Core Qt::Concurrent` and setting
+  `INSTALL_RPATH ${CMAKE_INSTALL_FULL_LIBDIR}/plasma-discover` so the plugin
+  resolves `libDiscoverNotifiers.so` out of the Discover prefix (the same RPATH
+  the flatpak notifier gets).
+
+**The probe is unprivileged, on purpose.** `hasPendingUpdates()` runs
+`xbps-install -nSu` and accepts any line whose second field is `update` — the
+identical command and parse the backend's own `loadUpdates()` uses, so the
+tray and the Updates page cannot disagree. `-n` is a dry run: it answers from
+the cached repodata in `/var/db/xbps/`, which every user can read. **No polkit
+action is involved and no prompt can appear at login, on resume, or on any
+periodic re-check.** The notifier never escalates, so it also cannot be a
+privilege surface: the only privileged xbps work on this box remains the GUI
+backend's sync (the existing `org.kde.discover.xbps.refresh`
+`allow_active=yes` action → `/usr/libexec/discover-xbps-refresh`, which takes
+no arguments and hardcodes a bare `xbps-install -S`).
+
+**How it reports.** The probe runs through `QtConcurrent::run` behind a
+`QFutureWatcher`, so the GUI thread never blocks on xbps, and `foundUpdates()`
+is emitted **only when the answer changes** — that transition is what tells
+`DiscoverNotifier` to raise the tray badge and post one notification, so a
+steady "up to date" state is silent. A `m_checking` guard makes a re-entrant
+re-check a no-op instead of a second spawn. `hasSecurityUpdates()` returns
+false and `needsReboot()` false: xbps carries no security-severity metadata
+and has no separate reboot signal to report.
+
+**What triggers a check.** A 24-hour `QTimer` (`m_dailyCheck`), plus a
+`QFileSystemWatcher` over `/var/db/xbps/*/x86_64-repodata` — the file every
+repository sync rewrites — so a `-S` from anywhere (the backend's own refresh
+included) re-runs the probe immediately instead of waiting for the next day.
+The watcher's paths are re-scanned before and after each check
+(`refreshWatchedRepodata()`) because repository files can appear or disappear
+as `/etc/xbps.d/*.conf` entries change.
+
+Both child-process paths fail safe: the start leg has a 5 s timeout and the
+finish leg 60 s, each killing the child on expiry, and any failure returns
+"no updates" rather than leaving a stale badge on screen.
+
+Template `revision=11` → `12`.
+
+---
+
 ## stores-r6 — 2026-11-06
 
 Served set: `discover-6.7.5_11.x86_64.xbps` (1650382 B,
