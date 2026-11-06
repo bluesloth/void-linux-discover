@@ -57,8 +57,19 @@ repodata and nothing on a stock Void box syncs it. The three transaction
 actions keep `auth_admin` and their `argv1` annotations unchanged from
 `revision=9`. The backend binary changes (plugin md5
 `2a8b1525…6130`), so the runtime matrix recorded for `_7`–`_9` does **not**
-carry over: the refresh path and the cold-start `pkexec` behaviour are
-unverified until a KDE box runs them.
+carry over. It was re-run on a fresh KDE box on **2026-11-06** (installer
+`Version-3.2.06`, this store's `discover-6.7.5_10` installed with
+`xbps-query -p repository discover` naming the store URL): the refresh
+`pkexec` is **promptless** (`org.kde.discover.xbps.refresh` =
+`allow_active=yes`) and throttled by `/run/discover-xbps-refresh.stamp`
+(exit 75 when throttled), a **cold start spawns exactly one** refresh
+`pkexec` — the revision-10 addition, not a prompt — install and remove raise
+the `auth_admin` dialogs and their action ids resolve through the `exec.path`
+annotations, cancelling either install or remove leaves **exactly one**
+"Update Issue" sheet with the UI still usable and the retry working, and a
+held xbps lock parks a transaction indefinitely (`package database locked,
+waiting...`) instead of surfacing an error. Full verdict table:
+`docs/HANDOFF-KDE-DISCOVER-XBPS-BACKEND.md` §5.6.
 
 `discover-6.7.5_8` is a **metadata-only** rebuild of `_7`: the shipped
 `xbps-backend.so` is byte-identical (md5 `bb385531…`), so the runtime
@@ -80,8 +91,8 @@ what is authorised. Policy file: sha256 `434f5a8f…cb8a`, shipped and carried
 copy byte-identical. Since the `xbps-backend.so` is unchanged, every runtime
 matrix verdict recorded for `_7`/`_8` carries over.
 
-The release count of `.xbps` files at the repository root is three
-(`_7`, `_8`, `_9`); the index advertises `_9` only.
+The release count of `.xbps` files at the repository root is four
+(`_7`, `_8`, `_9`, `_10`); the index advertises `_10` only.
 
 ## Verifying a package signature
 

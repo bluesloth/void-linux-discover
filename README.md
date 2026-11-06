@@ -133,4 +133,8 @@ them through Jekyll. The signing key stays off-repo (`--privkey` /
 The backend is validated by the headless Qt harness that loads the shipped
 `xbps-backend.so` via `QPluginLoader` and compares its view against the
 xbps CLI (shim + real-pkexec modes), plus a GUI walkthrough matrix. The
-record lives in `docs/HANDOFF-KDE-DISCOVER-XBPS-BACKEND.md`.
+record lives in `docs/HANDOFF-KDE-DISCOVER-XBPS-BACKEND.md`. The current
+`_10` build (the `[XBPS-REFRESH]` release) was walked end to end on a fresh
+KDE box on 2026-11-06 — install, remove, cancel, the flatpak regression, the
+Updates KCM, lock contention and the promptless refresh path — in that
+document's §5.6.
