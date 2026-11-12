@@ -1,7 +1,7 @@
 # Template file for 'discover'
 pkgname=discover
 version=6.7.5
-revision=12
+revision=13
 archs="x86_64*"
 #
 # DOWNSTREAM DELTA — xbps backend.  This template is Void's discover plus
@@ -22,7 +22,7 @@ hostmakedepends="extra-cmake-modules gettext pkg-config"
 makedepends="kf6-kitemmodels-devel kf6-attica-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-kcrash-devel kf6-kdbusaddons-devel kf6-ki18n-devel kf6-kiconthemes-devel kf6-kidletime-devel kf6-kjobwidgets-devel kf6-kcmutils-devel kf6-kio-devel kf6-knewstuff-devel kf6-knotifications-devel kf6-kservice-devel kf6-kstatusnotifieritem-devel kf6-kwidgetsaddons-devel kf6-kwindowsystem-devel kf6-kirigami-devel kf6-kxmlgui-devel kf6-purpose-devel kirigami-addons-devel qcoro-qt6-devel qt6-base-devel qt6-declarative-devel qt6-webview-devel flatpak-devel fwupd-devel glib-devel polkit AppStream-devel AppStream-qt-devel"
 depends="AppStream AppStream-qt kf6-kitemmodels kf6-attica kf6-kconfig kf6-kcoreaddons kf6-kcrash kf6-kdbusaddons kf6-ki18n kf6-kiconthemes kf6-kidletime kf6-kjobwidgets kf6-kcmutils kf6-kio kf6-knewstuff kf6-knotifications kf6-kservice kf6-kstatusnotifieritem kf6-kwidgetsaddons kf6-kwindowsystem kf6-kirigami kf6-kxmlgui kf6-purpose kirigami-addons qcoro-qt6 qt6-base qt6-declarative qt6-webview fwupd glib polkit"
 make_check=no
-short_desc="KDE resources management flatpak, plasma plugins (xbps backend)"
+short_desc="KDE resources management, plasma plugins (xbps backend, optional flatpak)"
 maintainer="Void Linux Stores <noreply@github.com>"
 license="GPL-2.0-or-later"
 homepage="https://apps.kde.org/discover"
