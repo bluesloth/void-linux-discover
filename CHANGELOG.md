@@ -57,6 +57,33 @@ makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
 in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
+## stores-r9 — 2026-11-20
+
+Served set: `discover-6.7.5_14.x86_64.xbps`, its `.sig2`, and the re-signed
+`x86_64-repodata` advertising `discover-6.7.5_14`. Superseded builds stay at
+the repository root but are no longer named by the index.
+
+### `[FEATURED-APPS]` — the Home tab shows applications again
+
+The Home tab's "Unable to load applications" placeholder was **not** caused by
+the featured feed (it answers 200 with 11 `appstream://` URIs) nor by missing
+AppStream catalogs. `AbstractAppsModel::setUris()` calls
+`backend->search(filter)` with the URI in `filter.resourceUrl` and an **empty**
+`filter.search`; our `XbpsBackend::search()` only looked at `filter.search` and
+returned an empty stream, so the featured model always had zero rows.
+
+The backend now resolves `appstream://` resource URLs: the desktop id
+(`org.kde.kate.desktop`) is reduced to its last component, lowercased, and
+used as an exact xbps package name (`kate`; `gcompris` maps to `gcompris-qt`).
+It queries `-Rs`/`-s` through the existing parser and keeps only the exact
+name, so featured results are ordinary xbps resources and their install,
+remove and state handling are unchanged. Ten of the eleven featured ids map
+to packages in Void's repositories.
+
+Template `revision=13` → `14`.
+
+---
+
 ## stores-r7 — 2026-11-06
 
 Served set: `discover-6.7.5_12.x86_64.xbps` (1657753 B,
