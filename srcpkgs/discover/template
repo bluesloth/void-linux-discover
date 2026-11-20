@@ -1,7 +1,7 @@
 # Template file for 'discover'
 pkgname=discover
 version=6.7.5
-revision=15
+revision=16
 archs="x86_64*"
 #
 # DOWNSTREAM DELTA — xbps backend.  This template is Void's discover plus
@@ -49,6 +49,12 @@ post_extract() {
 		endif()
 		EOF
 	}
+
+	# [CUSTOM-FLATPAK-USER-SCOPE] Keep official/installer-provided Flatpak
+	# remotes system-wide, but route an arbitrary local .flatpakrepo chosen by
+	# the user to the user installation (its URL + GPG key must not become
+	# root-installed). Mirrors COSMIC Store's r12 boundary.
+	(cd "${wrksrc}" && patch -p1 -i ${FILESDIR}/custom-flatpak-user-scope.patch)
 }
 
 # The polkit actions of the backend are not part of the upstream source tree,

@@ -1,0 +1,65 @@
+--- a/libdiscover/backends/FlatpakBackend/FlatpakBackend.cpp
++++ b/libdiscover/backends/FlatpakBackend/FlatpakBackend.cpp
+@@ -1023,6 +1023,23 @@
+         return;
+     }
+ 
++    // [CUSTOM-FLATPAK-USER-SCOPE] Official/installer-provided remotes stay
++    // system-wide. A local .flatpakrepo chosen by the user is untrusted input
++    // (its URL and GPG key become root-installed), so route it to the user
++    // installation -- the same boundary COSMIC Store uses.
++    FlatpakInstallation *sourceInstallation = preferredInstallation();
++    const QString repoHost = QUrl(repoUrl).host();
++    if (repoHost != QLatin1String("flathub.org") &&
++        repoHost != QLatin1String("dl.flathub.org") &&
++        repoHost != QLatin1String("cosmic")) {
++        for (FlatpakInstallation *candidate : std::as_const(m_installations)) {
++            if (flatpak_installation_get_is_user(candidate)) {
++                sourceInstallation = candidate;
++                break;
++            }
++        }
++    }
++
+     if (gpgKey.startsWith(QLatin1String("http://")) || gpgKey.startsWith(QLatin1String("https://"))) {
+         return;
+     }
+@@ -1042,7 +1059,7 @@
+         asComponent.addIcon(icon);
+     }
+ 
+-    auto resource = new FlatpakResource(asComponent, preferredInstallation(), this);
++    auto resource = new FlatpakResource(asComponent, sourceInstallation, this);
+     // Use metadata only for stuff which are not common for all resources
+     resource->addMetadata(QLatin1StringView("gpg-key"), gpgKey);
+     resource->addMetadata(QLatin1StringView("repo-url"), repoUrl);
+@@ -1051,7 +1068,7 @@
+     resource->setType(FlatpakResource::Source);
+ 
+     g_autoptr(FlatpakRemote) repo =
+-        flatpak_installation_get_remote_by_name(preferredInstallation(), resource->flatpakName().toUtf8().constData(), m_cancellable, nullptr);
++        flatpak_installation_get_remote_by_name(sourceInstallation, resource->flatpakName().toUtf8().constData(), m_cancellable, nullptr);
+     if (!repo) {
+         resource->setState(AbstractResource::State::None);
+     } else {
+@@ -2073,9 +2090,9 @@
+     g_autoptr(GCancellable) cancellable = g_cancellable_new();
+ 
+     if (g_autoptr(FlatpakRemote) remote =
+-            flatpak_installation_get_remote_by_name(preferredInstallation(), resource->flatpakName().toUtf8().constData(), cancellable, nullptr)) {
++            flatpak_installation_get_remote_by_name(resource->installation(), resource->flatpakName().toUtf8().constData(), cancellable, nullptr)) {
+         qCWarning(LIBDISCOVER_BACKEND_FLATPAK_LOG) << "Source" << resource->flatpakName() << "already exists in"
+-                                                   << flatpak_installation_get_path(preferredInstallation());
++                                                   << flatpak_installation_get_path(resource->installation());
+         return nullptr;
+     }
+ 
+@@ -2089,7 +2106,7 @@
+     }
+ 
+     g_autoptr(GError) error = nullptr;
+-    if (!flatpak_installation_add_remote(preferredInstallation(), remote, false, cancellable, &error)) {
++    if (!flatpak_installation_add_remote(resource->installation(), remote, false, cancellable, &error)) {
+         Q_EMIT passiveMessage(i18n("Failed to add source '%1': %2", resource->flatpakName(), QString::fromUtf8(error->message)));
+         qCWarning(LIBDISCOVER_BACKEND_FLATPAK_LOG) << "Failed to add source" << resource->flatpakName() << error->message;
+         return nullptr;

@@ -57,6 +57,29 @@ makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
 in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
+## stores-r11 — 2026-11-20
+
+Served set: `discover-6.7.5_16.x86_64.xbps`, its `.sig2`, and the re-signed
+`x86_64-repodata` advertising `discover-6.7.5_16`. Superseded builds stay at
+the repository root but are no longer named by the index.
+
+### `[CUSTOM-FLATPAK-USER-SCOPE]` — arbitrary remotes no longer reach root
+
+COSMIC Store deliberately keeps custom `.flatpakrepo` imports user-scope so a
+user-chosen URL and GPG key never become a root-installed remote; Discover and
+GNOME Software previously defaulted them to system scope. This release brings
+Discover onto the safer boundary: `files/custom-flatpak-user-scope.patch`
+upstreams a check into `FlatpakBackend::addSourceFromFlatpakRepo()` — remotes
+whose URL host is `flathub.org`, `dl.flathub.org` or `cosmic` stay on the
+system installation, every other local `.flatpakrepo` is attached to the user
+installation. `installSource()` now acts on `resource->installation()` rather
+than unconditionally on `preferredInstallation()`, so Add and Remove agree on
+scope. The built-in "Add Flathub" action uses a remote URL and stays system.
+
+Template `revision=15` → `16`.
+
+---
+
 ## stores-r10 — 2026-11-20
 
 Served set: `discover-6.7.5_15.x86_64.xbps`, its `.sig2`, and the re-signed
