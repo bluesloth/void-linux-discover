@@ -57,6 +57,32 @@ makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
 in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
+## stores-r12 — 2026-11-20
+
+Served set: `discover-6.7.5_18.x86_64.xbps`, its `.sig2`, and the re-signed
+`x86_64-repodata` advertising `discover-6.7.5_18`. Superseded builds stay at
+the repository root but are no longer named by the index.
+
+### `[FEATURED-REVERT]` — restore a stable Discover
+
+Repeated launch testing of `_14`, `_15`, `_16` and `_17` showed a **consistent
+segfault** in `ResultsStream::resourcesFound()` as soon as the featured feed
+produced results through the xbps backend (gdb backtrace and three-run trials
+in `xbps-work/opencode/2026-11-20-discover-featured/`). A resource URL change
+did not help. The earlier single "Home tab populated" observation was a false
+positive — the process died shortly afterwards.
+
+This release removes the `[FEATURED-APPS]`/`[FEATURED-APPS-CRASH]` changes to
+`XbpsBackend.cpp` entirely, restoring the pre-r9 backend. The Home tab returns
+to its "Unable to load applications" placeholder. The `[CUSTOM-FLATPAK-USER-SCOPE]`
+patch from r11 is **kept**: arbitrary local `.flatpakrepo` files still go to
+the user installation while official remotes stay system-wide.
+
+Template `revision=17` → `18`. The Home tab needs a separate, properly
+validated fix before it is shipped again.
+
+---
+
 ## stores-r11 — 2026-11-20
 
 Served set: `discover-6.7.5_16.x86_64.xbps`, its `.sig2`, and the re-signed

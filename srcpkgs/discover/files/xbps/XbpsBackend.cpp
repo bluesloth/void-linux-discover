@@ -524,29 +524,7 @@ ResultsStream *XbpsBackend::search(const AbstractResourcesBackend::Filters &filt
 {
     auto *stream = new ResultsStream(QStringLiteral("XbpsSearch"));
 
-    // [FEATURED-APPS] The Home tab's featured list calls search() with a URI in
-    // filter.resourceUrl and an EMPTY filter.search (AbstractAppsModel::setUris).
-    // Void ships no per-package AppStream catalog, so no other backend resolves
-    // those appstream:// URIs and the tab shows "Unable to load applications".
-    // Map a desktop id ("org.kde.kate.desktop") to the xbps package name and
-    // query that instead; the resources returned are ordinary xbps resources,
-    // so install/remove keep working through the existing privileged paths.
-    QString search = filter.search;
-    QString exactName;
-    if (search.isEmpty() && filter.resourceUrl.scheme() == QLatin1String("appstream")) {
-        QString id = filter.resourceUrl.host();
-        if (id.isEmpty())
-            id = filter.resourceUrl.path().section(QLatin1Char('/'), -1);
-        if (id.endsWith(QLatin1String(".desktop")))
-            id.chop(8);
-        exactName = id.section(QLatin1Char('.'), -1).toLower();
-        // The only featured id whose desktop name differs from the package.
-        if (exactName == QLatin1String("gcompris"))
-            exactName = QStringLiteral("gcompris-qt");
-        search = exactName;
-    }
-
-    if (search.isEmpty()) {
+    if (filter.search.isEmpty()) {
         QTimer::singleShot(0, stream, &ResultsStream::finish);
         return stream;
     }
@@ -556,11 +534,11 @@ ResultsStream *XbpsBackend::search(const AbstractResourcesBackend::Filters &filt
     // queried, one after the other.
     auto *repoProcess = new QProcess(stream);
     repoProcess->setProgram(QStringLiteral("xbps-query"));
-    repoProcess->setArguments({QStringLiteral("-Rs"), search});
+    repoProcess->setArguments({QStringLiteral("-Rs"), filter.search});
 
     auto *localProcess = new QProcess(stream);
     localProcess->setProgram(QStringLiteral("xbps-query"));
-    localProcess->setArguments({QStringLiteral("-s"), search});
+    localProcess->setArguments({QStringLiteral("-s"), filter.search});
 
     auto *packages = new QList<ParsedPackage>();
 
@@ -569,28 +547,17 @@ ResultsStream *XbpsBackend::search(const AbstractResourcesBackend::Filters &filt
         localProcess->start();
     });
 
-    connect(localProcess, &QProcess::finished, this, [this, stream, filter, exactName, localProcess, packages]() {
+    connect(localProcess, &QProcess::finished, this, [this, stream, filter, localProcess, packages]() {
         *packages += parsePackageList(localProcess->readAllStandardOutput());
 
         QVector<StreamResult> results;
         for (const ParsedPackage &package : std::as_const(*packages)) {
-            // An appstream URI targets one package; a plain search keeps every
-            // match (e.g. "kate" also finds the transitional "kate5").
-            if (!exactName.isEmpty() && package.name != exactName)
-                continue;
-            // Featured URIs run many searches in parallel. Give each one its
-            // own resource rather than sharing an m_resources pointer across
-            // streams (BestInResultsStream owns what it is handed).
-            XbpsResource *res = nullptr;
-            if (exactName.isEmpty()) {
-                res = m_resources.value(package.name, nullptr);
-            }
+            XbpsResource *res = m_resources.value(package.name, nullptr);
             if (!res) {
                 res = new XbpsResource(this);
                 res->setPackageName(package.name);
                 res->setSummary(package.description);
-                if (exactName.isEmpty())
-                    addResource(res);
+                addResource(res);
             } else if (res->summary().isEmpty()) {
                 res->setSummary(package.description);
             }
