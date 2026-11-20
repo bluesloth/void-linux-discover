@@ -57,6 +57,29 @@ makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
 in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
+## stores-r10 — 2026-11-20
+
+Served set: `discover-6.7.5_15.x86_64.xbps`, its `.sig2`, and the re-signed
+`x86_64-repodata` advertising `discover-6.7.5_15`. Superseded builds stay at
+the repository root but are no longer named by the index.
+
+### `[FEATURED-APPS-CRASH]` — r9's featured lookup segfaulted Discover
+
+Revision 14 returned the shared `m_resources` object for a featured package.
+`AbstractAppsModel::setUris()` launches one search per URI (11 in the shipped
+feed), and `BestInResultsStream` takes ownership of the results it is handed;
+the same `XbpsResource *` therefore reached it from several streams and was
+destroyed while other streams still held it. A gdb backtrace put the fault at
+`ResultsStream::resourcesFound()` called from the backend's finished handler,
+and the previous `_13` build ran clean, isolating it to r9's change.
+
+The featured path now constructs a **fresh** `XbpsResource` per result and does
+not register it in `m_resources`; the ordinary search path is unchanged.
+
+Template `revision=14` → `15`.
+
+---
+
 ## stores-r9 — 2026-11-20
 
 Served set: `discover-6.7.5_14.x86_64.xbps`, its `.sig2`, and the re-signed

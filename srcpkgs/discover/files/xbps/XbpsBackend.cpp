@@ -578,12 +578,19 @@ ResultsStream *XbpsBackend::search(const AbstractResourcesBackend::Filters &filt
             // match (e.g. "kate" also finds the transitional "kate5").
             if (!exactName.isEmpty() && package.name != exactName)
                 continue;
-            XbpsResource *res = m_resources.value(package.name, nullptr);
+            // Featured URIs run many searches in parallel. Give each one its
+            // own resource rather than sharing an m_resources pointer across
+            // streams (BestInResultsStream owns what it is handed).
+            XbpsResource *res = nullptr;
+            if (exactName.isEmpty()) {
+                res = m_resources.value(package.name, nullptr);
+            }
             if (!res) {
                 res = new XbpsResource(this);
                 res->setPackageName(package.name);
                 res->setSummary(package.description);
-                addResource(res);
+                if (exactName.isEmpty())
+                    addResource(res);
             } else if (res->summary().isEmpty()) {
                 res->setSummary(package.description);
             }
