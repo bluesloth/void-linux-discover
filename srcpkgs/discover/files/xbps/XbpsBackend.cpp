@@ -524,7 +524,29 @@ ResultsStream *XbpsBackend::search(const AbstractResourcesBackend::Filters &filt
 {
     auto *stream = new ResultsStream(QStringLiteral("XbpsSearch"));
 
-    if (filter.search.isEmpty()) {
+    // [FEATURED-APPS] AbstractAppsModel::setUris() calls search() with the
+    // appstream:// URI in filter.resourceUrl and an EMPTY filter.search. Void
+    // ships no per-package AppStream catalog, so no other backend resolves
+    // those URIs and the Home tab shows "Unable to load applications". Map the
+    // desktop id ("org.kde.kate.desktop") to the xbps package name and query
+    // that instead. Results are ordinary xbps resources, so install/remove
+    // keep using the existing privileged paths.
+    QString search = filter.search;
+    QString exactName;
+    if (search.isEmpty() && filter.resourceUrl.scheme() == QLatin1String("appstream")) {
+        QString id = filter.resourceUrl.host();
+        if (id.isEmpty())
+            id = filter.resourceUrl.path().section(QLatin1Char('/'), -1);
+        if (id.endsWith(QLatin1String(".desktop")))
+            id.chop(8);
+        exactName = id.section(QLatin1Char('.'), -1).toLower();
+        // The only featured id whose desktop name differs from its package.
+        if (exactName == QLatin1String("gcompris"))
+            exactName = QStringLiteral("gcompris-qt");
+        search = exactName;
+    }
+
+    if (search.isEmpty()) {
         QTimer::singleShot(0, stream, &ResultsStream::finish);
         return stream;
     }
@@ -534,11 +556,11 @@ ResultsStream *XbpsBackend::search(const AbstractResourcesBackend::Filters &filt
     // queried, one after the other.
     auto *repoProcess = new QProcess(stream);
     repoProcess->setProgram(QStringLiteral("xbps-query"));
-    repoProcess->setArguments({QStringLiteral("-Rs"), filter.search});
+    repoProcess->setArguments({QStringLiteral("-Rs"), search});
 
     auto *localProcess = new QProcess(stream);
     localProcess->setProgram(QStringLiteral("xbps-query"));
-    localProcess->setArguments({QStringLiteral("-s"), filter.search});
+    localProcess->setArguments({QStringLiteral("-s"), search});
 
     auto *packages = new QList<ParsedPackage>();
 
@@ -547,17 +569,27 @@ ResultsStream *XbpsBackend::search(const AbstractResourcesBackend::Filters &filt
         localProcess->start();
     });
 
-    connect(localProcess, &QProcess::finished, this, [this, stream, filter, localProcess, packages]() {
+    connect(localProcess, &QProcess::finished, this, [this, stream, filter, exactName, localProcess, packages]() {
         *packages += parsePackageList(localProcess->readAllStandardOutput());
 
         QVector<StreamResult> results;
         for (const ParsedPackage &package : std::as_const(*packages)) {
-            XbpsResource *res = m_resources.value(package.name, nullptr);
+            // An appstream URI targets exactly one package; a plain search
+            // keeps every match ("kate" also finds the transitional "kate5").
+            if (!exactName.isEmpty() && package.name != exactName)
+                continue;
+            // Featured URIs run many searches in parallel. Give each one its
+            // own resource instead of sharing an m_resources pointer across
+            // streams that BestInResultsStream owns independently.
+            XbpsResource *res = nullptr;
+            if (exactName.isEmpty())
+                res = m_resources.value(package.name, nullptr);
             if (!res) {
                 res = new XbpsResource(this);
                 res->setPackageName(package.name);
                 res->setSummary(package.description);
-                addResource(res);
+                if (exactName.isEmpty())
+                    addResource(res);
             } else if (res->summary().isEmpty()) {
                 res->setSummary(package.description);
             }
@@ -571,7 +603,15 @@ ResultsStream *XbpsBackend::search(const AbstractResourcesBackend::Filters &filt
         delete packages;
 
         filter.filterJustInCase(results);
-        Q_EMIT stream->resourcesFound(results);
+
+        // [FEATURED-CRASH-GUARD] Upstream AbstractAppsModel::BestInResultsStream
+        // does resources.constFirst() on every resourcesFound emission, so an
+        // empty vector is undefined behaviour and segfaults Discover inside
+        // ResultsStream::resourcesFound() (gdb backtrace in the r12 evidence).
+        // Never emit an empty result set: an unmatched featured package then
+        // simply contributes no tile instead of taking down the whole app.
+        if (!results.isEmpty())
+            Q_EMIT stream->resourcesFound(results);
         stream->finish();
     });
 

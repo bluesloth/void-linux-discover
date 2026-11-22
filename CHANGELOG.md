@@ -57,6 +57,32 @@ makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
 in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
+## Unreleased — `[FEATURED-APPS]` with a crash guard
+
+### `[FEATURED-APPS]` + `[FEATURED-CRASH-GUARD]` — populate the Home tab safely
+
+The r9–r12 "featured patch crashes Discover" conclusion was right about the
+symptom but wrong about the cause. The 6.7.5 source shows upstream's
+`AbstractAppsModel::BestInResultsStream` does
+`m_resources.append(resources.constFirst())` for **every**
+`ResultsStream::resourcesFound` emission. Our `XbpsBackend::search()` emitted
+an empty `QVector<StreamResult>` whenever a featured package had no exact
+match, and `constFirst()` on an empty vector is undefined behaviour — which is
+exactly where the gdb backtrace lands (`ResultsStream::resourcesFound()`). It
+was never about shared `m_resources` pointers.
+
+`XbpsBackend::search()` now (a) maps the `appstream://` URI that
+`AbstractAppsModel::setUris()` puts in `filter.resourceUrl` (with an empty
+`filter.search`) to an exact xbps package query — only `gcompris` needs a
+rename, to `gcompris-qt` — and (b) **never emits `resourcesFound` with an
+empty vector**. An unmatched featured package therefore contributes no tile
+instead of taking down the whole application.
+
+Template `revision=18` → `19`. This must survive repeated real launches
+before it is published; no release tag is cut for it yet.
+
+---
+
 ## stores-r12 — 2026-11-20
 
 Served set: `discover-6.7.5_18.x86_64.xbps`, its `.sig2`, and the re-signed
