@@ -57,7 +57,13 @@ makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
 in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
-## Unreleased — `[FEATURED-ALL-BACKENDS]`
+## stores-r14 — 2026-11-21
+
+Served set: `discover-6.7.5_20.x86_64.xbps` (`sha256 f76f3bec…15857`), its
+`.sig2`, and the re-signed `x86_64-repodata` advertising `discover-6.7.5_20`.
+Superseded builds stay at the repository root but are no longer named by the
+index.
+
 
 ### `[FEATURED-ALL-BACKENDS]` — Home tab shows both xbps and Flatpak
 
@@ -71,8 +77,9 @@ current. The carried patch asks **every** backend that reports
 the bare package name while Flatpak's is the full desktop id.
 
 Both backends already guard against empty `resourcesFound` emissions, so the
-r9–r12 crash path stays closed. Template `revision=19` → `20`. Needs the same
-multi-launch validation before publish.
+r9–r12 crash path stays closed. Template `revision=19` → `20`. Validated with
+5/5 clean launches and on-screen confirmation that both xbps and Flathub tiles
+appear before the release tag was cut.
 
 ---
 
