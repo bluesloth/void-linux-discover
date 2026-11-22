@@ -57,7 +57,12 @@ makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
 in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
-## Unreleased — `[FEATURED-APPS]` with a crash guard
+## stores-r13 — 2026-11-21
+
+Served set: `discover-6.7.5_19.x86_64.xbps` (`sha256 d6c4dc54…5c83`), its
+`.sig2`, and the re-signed `x86_64-repodata`
+(`sha256 120b84d5…268a0`) advertising `discover-6.7.5_19`. Superseded builds
+stay at the repository root but are no longer named by the index.
 
 ### `[FEATURED-APPS]` + `[FEATURED-CRASH-GUARD]` — populate the Home tab safely
 
@@ -78,8 +83,9 @@ rename, to `gcompris-qt` — and (b) **never emits `resourcesFound` with an
 empty vector**. An unmatched featured package therefore contributes no tile
 instead of taking down the whole application.
 
-Template `revision=18` → `19`. This must survive repeated real launches
-before it is published; no release tag is cut for it yet.
+Template `revision=18` → `19`. Validated with five clean automated launches
+and a full interactive session in which the Home tab listed apps and a GIMP
+install completed, before the release tag was cut.
 
 ---
 
