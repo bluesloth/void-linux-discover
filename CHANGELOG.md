@@ -57,6 +57,25 @@ makes the installer's trust-anchor check FATAL (see the 2026-10-09 incident
 in the COSMIC repository: a repack that dropped the signature left the index
 unsigned and every install aborted).
 
+## Unreleased — `[FEATURED-ALL-BACKENDS]`
+
+### `[FEATURED-ALL-BACKENDS]` — Home tab shows both xbps and Flatpak
+
+Upstream `AbstractAppsModel::setUris()` resolves the featured `appstream://`
+URIs through only `ResourcesModel::currentApplicationBackend()`, so the Home
+tab showed either xbps packages or Flathub apps depending on which source was
+current. The carried patch asks **every** backend that reports
+`hasApplications()`, collecting one tile per (backend, URI) pair through
+`BestInResultsStream`. Both sources therefore appear together; upstream's
+`filterDupes()` keeps them separate because `XbpsResource::appstreamId()` is
+the bare package name while Flatpak's is the full desktop id.
+
+Both backends already guard against empty `resourcesFound` emissions, so the
+r9–r12 crash path stays closed. Template `revision=19` → `20`. Needs the same
+multi-launch validation before publish.
+
+---
+
 ## stores-r13 — 2026-11-21
 
 Served set: `discover-6.7.5_19.x86_64.xbps` (`sha256 d6c4dc54…5c83`), its

@@ -1,7 +1,7 @@
 # Template file for 'discover'
 pkgname=discover
 version=6.7.5
-revision=19
+revision=20
 archs="x86_64*"
 #
 # DOWNSTREAM DELTA — xbps backend.  This template is Void's discover plus
@@ -55,6 +55,11 @@ post_extract() {
 	# the user to the user installation (its URL + GPG key must not become
 	# root-installed). Mirrors COSMIC Store's r12 boundary.
 	(cd "${wrksrc}" && patch -p1 -i ${FILESDIR}/custom-flatpak-user-scope.patch)
+
+	# [FEATURED-ALL-BACKENDS] Ask every application backend (xbps + Flatpak)
+	# to resolve the Home tab's appstream:// URIs, so tiles from both sources
+	# are shown instead of only the current application backend's.
+	(cd "${wrksrc}" && patch -p1 -i ${FILESDIR}/featured-all-backends.patch)
 }
 
 # The polkit actions of the backend are not part of the upstream source tree,

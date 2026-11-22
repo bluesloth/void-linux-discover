@@ -1,0 +1,38 @@
+--- a/discover/AbstractAppsModel.cpp
++++ b/discover/AbstractAppsModel.cpp
+@@ -94,19 +94,31 @@
+ 
+ void AbstractAppsModel::setUris(const QVector<QUrl> &uris)
+ {
+-    if (!m_backend)
+-        return;
+-
+     if (m_uris == uris) {
+         return;
+     }
+     m_uris = uris;
+ 
++    // [FEATURED-ALL-BACKENDS] Upstream asks only the current application
++    // backend to resolve the Home tab's appstream:// URIs. On Void both the
++    // xbps and Flatpak backends can provide a tile for the same app, so ask
++    // every backend that has applications. BestInResultsStream takes the
++    // first result from each stream, so one tile per (backend, URI) pair is
++    // collected; a backend that cannot resolve a URI emits nothing and
++    // contributes no tile (never an empty resourcesFound emission).
++    QVector<AbstractResourcesBackend *> applicationBackends;
++    for (AbstractResourcesBackend *backend : ResourcesModel::global()->backends()) {
++        if (backend->hasApplications())
++            applicationBackends << backend;
++    }
++
+     QSet<ResultsStream *> streams;
+     for (const auto &uri : uris) {
+         AbstractResourcesBackend::Filters filter;
+         filter.resourceUrl = uri;
+-        streams << m_backend->search(filter);
++        for (AbstractResourcesBackend *backend : applicationBackends) {
++            streams << backend->search(filter);
++        }
+     }
+     if (!streams.isEmpty()) {
+         auto stream = new BestInResultsStream(streams);
